@@ -41,9 +41,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         const SizedBox(height: 16),
         if (recordsAsync.isLoading && recordsAsync.valueOrNull == null)
           const Center(child: CircularProgressIndicator())
-        else if (recordsAsync.hasError)
-          Text('Error: ${recordsAsync.error}')
-        else
+        else ...[
+          if (recordsAsync.hasError)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: ListTile(
+                leading: Icon(
+                  Icons.cloud_off,
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+                title: Text(
+                  'Could not reach remote server — retrying…',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+                subtitle: Text(
+                  'Check the host URL in Settings.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -78,6 +98,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
             ],
           ),
+        ],
       ],
     );
   }

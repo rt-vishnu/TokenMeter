@@ -1,4 +1,20 @@
 {
+  "_meta": {
+    "last_updated": "2026-06-10"
+  },
+
+  "gpt-5.5": {
+    "provider": "openai",
+    "display_name": "GPT-5.5",
+    "input_per_1m": 7.50,
+    "output_per_1m": 30.00
+  },
+  "gpt-5": {
+    "provider": "openai",
+    "display_name": "GPT-5",
+    "input_per_1m": 5.00,
+    "output_per_1m": 20.00
+  },
   "gpt-4o": {
     "provider": "openai",
     "display_name": "GPT-4o",
@@ -17,23 +33,54 @@
     "input_per_1m": 2.00,
     "output_per_1m": 8.00
   },
+  "gpt-4.1-mini": {
+    "provider": "openai",
+    "display_name": "GPT-4.1 Mini",
+    "input_per_1m": 0.40,
+    "output_per_1m": 1.60
+  },
+  "gpt-4.1-nano": {
+    "provider": "openai",
+    "display_name": "GPT-4.1 Nano",
+    "input_per_1m": 0.10,
+    "output_per_1m": 0.40
+  },
+  "o1": {
+    "provider": "openai",
+    "display_name": "o1",
+    "input_per_1m": 15.00,
+    "output_per_1m": 60.00
+  },
+  "o1-mini": {
+    "provider": "openai",
+    "display_name": "o1-mini",
+    "input_per_1m": 1.10,
+    "output_per_1m": 4.40
+  },
+  "o3": {
+    "provider": "openai",
+    "display_name": "o3",
+    "input_per_1m": 10.00,
+    "output_per_1m": 40.00
+  },
   "o3-mini": {
     "provider": "openai",
     "display_name": "o3-mini",
     "input_per_1m": 1.10,
     "output_per_1m": 4.40
   },
-  "claude-sonnet-4": {
-    "provider": "anthropic",
-    "display_name": "Claude Sonnet 4",
-    "input_per_1m": 3.00,
-    "output_per_1m": 15.00
+  "o4-mini": {
+    "provider": "openai",
+    "display_name": "o4-mini",
+    "input_per_1m": 1.10,
+    "output_per_1m": 4.40
   },
-  "claude-haiku-3-5": {
+
+  "claude-opus-4-8": {
     "provider": "anthropic",
-    "display_name": "Claude Haiku 3.5",
-    "input_per_1m": 0.80,
-    "output_per_1m": 4.00
+    "display_name": "Claude Opus 4.8",
+    "input_per_1m": 5.00,
+    "output_per_1m": 25.00
   },
   "claude-opus-4": {
     "provider": "anthropic",
@@ -41,17 +88,66 @@
     "input_per_1m": 15.00,
     "output_per_1m": 75.00
   },
-  "gemini-2.0-flash": {
-    "provider": "google",
-    "display_name": "Gemini 2.0 Flash",
-    "input_per_1m": 0.10,
-    "output_per_1m": 0.40
+  "claude-sonnet-4-6": {
+    "provider": "anthropic",
+    "display_name": "Claude Sonnet 4.6",
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
   },
-  "gemini-2.5-flash-lite": {
+  "claude-sonnet-4": {
+    "provider": "anthropic",
+    "display_name": "Claude Sonnet 4",
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
+  },
+  "claude-haiku-4-5": {
+    "provider": "anthropic",
+    "display_name": "Claude Haiku 4.5",
+    "input_per_1m": 1.00,
+    "output_per_1m": 5.00
+  },
+  "claude-haiku-3-5": {
+    "provider": "anthropic",
+    "display_name": "Claude Haiku 3.5",
+    "input_per_1m": 0.80,
+    "output_per_1m": 4.00
+  },
+  "claude-3-5-sonnet": {
+    "provider": "anthropic",
+    "display_name": "Claude 3.5 Sonnet",
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
+  },
+  "claude-3-5-haiku": {
+    "provider": "anthropic",
+    "display_name": "Claude 3.5 Haiku",
+    "input_per_1m": 0.80,
+    "output_per_1m": 4.00
+  },
+  "claude-3-opus": {
+    "provider": "anthropic",
+    "display_name": "Claude 3 Opus",
+    "input_per_1m": 15.00,
+    "output_per_1m": 75.00
+  },
+  "claude-3-sonnet": {
+    "provider": "anthropic",
+    "display_name": "Claude 3 Sonnet",
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
+  },
+  "claude-3-haiku": {
+    "provider": "anthropic",
+    "display_name": "Claude 3 Haiku",
+    "input_per_1m": 0.25,
+    "output_per_1m": 1.25
+  },
+
+  "gemini-2.5-pro": {
     "provider": "google",
-    "display_name": "Gemini 2.5 Flash Lite",
-    "input_per_1m": 0.10,
-    "output_per_1m": 0.40
+    "display_name": "Gemini 2.5 Pro",
+    "input_per_1m": 1.25,
+    "output_per_1m": 10.00
   },
   "gemini-2.5-flash": {
     "provider": "google",
@@ -59,22 +155,202 @@
     "input_per_1m": 0.30,
     "output_per_1m": 2.50
   },
-  "gemini-2.5-pro": {
+  "gemini-2.5-flash-lite": {
     "provider": "google",
-    "display_name": "Gemini 2.5 Pro",
-    "input_per_1m": 1.25,
-    "output_per_1m": 10.00
+    "display_name": "Gemini 2.5 Flash Lite",
+    "input_per_1m": 0.10,
+    "output_per_1m": 0.40
   },
+  "gemini-2.0-flash": {
+    "provider": "google",
+    "display_name": "Gemini 2.0 Flash",
+    "input_per_1m": 0.10,
+    "output_per_1m": 0.40
+  },
+  "gemini-2.0-flash-lite": {
+    "provider": "google",
+    "display_name": "Gemini 2.0 Flash Lite",
+    "input_per_1m": 0.075,
+    "output_per_1m": 0.30
+  },
+  "gemini-1.5-pro": {
+    "provider": "google",
+    "display_name": "Gemini 1.5 Pro",
+    "input_per_1m": 1.25,
+    "output_per_1m": 5.00
+  },
+  "gemini-1.5-flash": {
+    "provider": "google",
+    "display_name": "Gemini 1.5 Flash",
+    "input_per_1m": 0.075,
+    "output_per_1m": 0.30
+  },
+  "gemini-1.5-flash-8b": {
+    "provider": "google",
+    "display_name": "Gemini 1.5 Flash 8B",
+    "input_per_1m": 0.0375,
+    "output_per_1m": 0.15
+  },
+
   "deepseek-v3": {
     "provider": "deepseek",
     "display_name": "DeepSeek V3",
     "input_per_1m": 0.27,
     "output_per_1m": 1.10
   },
+  "deepseek-r1": {
+    "provider": "deepseek",
+    "display_name": "DeepSeek R1",
+    "input_per_1m": 0.55,
+    "output_per_1m": 2.19
+  },
+  "deepseek-r1-zero": {
+    "provider": "deepseek",
+    "display_name": "DeepSeek R1 Zero",
+    "input_per_1m": 0.55,
+    "output_per_1m": 2.19
+  },
+  "deepseek-v2-5": {
+    "provider": "deepseek",
+    "display_name": "DeepSeek V2.5",
+    "input_per_1m": 0.14,
+    "output_per_1m": 0.28
+  },
+
   "llama-3.3-70b": {
     "provider": "meta",
     "display_name": "Llama 3.3 70B",
     "input_per_1m": 0.59,
     "output_per_1m": 0.79
+  },
+  "llama-3.1-405b": {
+    "provider": "meta",
+    "display_name": "Llama 3.1 405B",
+    "input_per_1m": 3.00,
+    "output_per_1m": 3.00
+  },
+  "llama-3.1-70b": {
+    "provider": "meta",
+    "display_name": "Llama 3.1 70B",
+    "input_per_1m": 0.59,
+    "output_per_1m": 0.79
+  },
+  "llama-3.1-8b": {
+    "provider": "meta",
+    "display_name": "Llama 3.1 8B",
+    "input_per_1m": 0.05,
+    "output_per_1m": 0.08
+  },
+  "llama-3.2-90b": {
+    "provider": "meta",
+    "display_name": "Llama 3.2 90B Vision",
+    "input_per_1m": 0.35,
+    "output_per_1m": 0.40
+  },
+  "llama-3.2-11b": {
+    "provider": "meta",
+    "display_name": "Llama 3.2 11B Vision",
+    "input_per_1m": 0.16,
+    "output_per_1m": 0.16
+  },
+  "llama-3.2-3b": {
+    "provider": "meta",
+    "display_name": "Llama 3.2 3B",
+    "input_per_1m": 0.06,
+    "output_per_1m": 0.06
+  },
+  "llama-3.2-1b": {
+    "provider": "meta",
+    "display_name": "Llama 3.2 1B",
+    "input_per_1m": 0.04,
+    "output_per_1m": 0.04
+  },
+
+  "mistral-large-2": {
+    "provider": "mistral",
+    "display_name": "Mistral Large 2",
+    "input_per_1m": 2.00,
+    "output_per_1m": 6.00
+  },
+  "mistral-small-3": {
+    "provider": "mistral",
+    "display_name": "Mistral Small 3",
+    "input_per_1m": 0.10,
+    "output_per_1m": 0.30
+  },
+  "codestral": {
+    "provider": "mistral",
+    "display_name": "Codestral",
+    "input_per_1m": 0.20,
+    "output_per_1m": 0.60
+  },
+  "mistral-nemo": {
+    "provider": "mistral",
+    "display_name": "Mistral NeMo",
+    "input_per_1m": 0.13,
+    "output_per_1m": 0.13
+  },
+
+  "command-r-plus": {
+    "provider": "cohere",
+    "display_name": "Command R+",
+    "input_per_1m": 2.50,
+    "output_per_1m": 10.00
+  },
+  "command-r": {
+    "provider": "cohere",
+    "display_name": "Command R",
+    "input_per_1m": 0.15,
+    "output_per_1m": 0.60
+  },
+  "command-r7b": {
+    "provider": "cohere",
+    "display_name": "Command R7B",
+    "input_per_1m": 0.0375,
+    "output_per_1m": 0.15
+  },
+
+  "qwen2.5-72b": {
+    "provider": "alibaba",
+    "display_name": "Qwen 2.5 72B",
+    "input_per_1m": 0.90,
+    "output_per_1m": 0.90
+  },
+  "qwen2.5-coder-32b": {
+    "provider": "alibaba",
+    "display_name": "Qwen 2.5 Coder 32B",
+    "input_per_1m": 0.06,
+    "output_per_1m": 0.12
+  },
+  "qwen-plus": {
+    "provider": "alibaba",
+    "display_name": "Qwen Plus",
+    "input_per_1m": 0.40,
+    "output_per_1m": 1.20
+  },
+  "qwen-turbo": {
+    "provider": "alibaba",
+    "display_name": "Qwen Turbo",
+    "input_per_1m": 0.05,
+    "output_per_1m": 0.20
+  },
+
+  "grok-3": {
+    "provider": "xai",
+    "display_name": "Grok 3",
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
+  },
+  "grok-3-mini": {
+    "provider": "xai",
+    "display_name": "Grok 3 Mini",
+    "input_per_1m": 0.30,
+    "output_per_1m": 0.50
+  },
+  "grok-2": {
+    "provider": "xai",
+    "display_name": "Grok 2",
+    "input_per_1m": 2.00,
+    "output_per_1m": 10.00
   }
 }

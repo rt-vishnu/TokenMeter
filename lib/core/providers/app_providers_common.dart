@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_providers_native.dart'
     if (dart.library.html) 'app_providers_native_stub.dart';
 import '../models/usage_record.dart';
+import '../services/local_api_server.dart';
 import '../services/network_service.dart';
 import '../services/pricing_repository.dart';
 import '../services/remote_api_client.dart';
@@ -60,15 +63,24 @@ final serverStateProvider =
 class ServerState {
   const ServerState({
     this.isRunning = false,
+    this.isStopping = false,
     this.host,
     this.port,
+    this.requestedPort,
     this.error,
   });
 
   final bool isRunning;
+  /// True during the graceful drain window after toggling off.
+  final bool isStopping;
   final String? host;
   final int? port;
+  /// Non-null when the server fell back to a different port.
+  final int? requestedPort;
   final String? error;
+
+  bool get usedFallbackPort =>
+      requestedPort != null && requestedPort != port;
 
   String? get endpoint {
     if (host == null || port == null) return null;
@@ -77,14 +89,18 @@ class ServerState {
 
   ServerState copyWith({
     bool? isRunning,
+    bool? isStopping,
     String? host,
     int? port,
+    int? requestedPort,
     String? error,
   }) {
     return ServerState(
       isRunning: isRunning ?? this.isRunning,
+      isStopping: isStopping ?? this.isStopping,
       host: host ?? this.host,
       port: port ?? this.port,
+      requestedPort: requestedPort ?? this.requestedPort,
       error: error,
     );
   }
@@ -105,27 +121,34 @@ class ServerStateNotifier extends StateNotifier<ServerState> {
     if (enabled) {
       final ip = await network.getLocalIp();
       if (ip == null) {
-        state = state.copyWith(
-          isRunning: false,
+        state = const ServerState(
           error: 'Could not detect local IP address',
         );
         return;
       }
       final port = settings.apiPort;
       try {
-        await server.start(ip, port);
+        final boundPort = await server.start(ip, port);
         await settings.setServerEnabled(true);
-        state = ServerState(isRunning: true, host: ip, port: port);
-      } catch (e) {
-        state = state.copyWith(
-          isRunning: false,
-          error: 'Failed to start server: $e',
+        state = ServerState(
+          isRunning: true,
+          host: ip,
+          port: boundPort,
+          requestedPort: boundPort != port ? port : null,
         );
+      } on SocketException {
+        state = ServerState(
+          error: 'Port $port and the next ${LocalApiServer.portFallbackCount} '
+              'ports are all in use. Change the port in Settings.',
+        );
+      } catch (e) {
+        state = ServerState(error: 'Failed to start server: $e');
       }
     } else {
+      state = state.copyWith(isStopping: true, isRunning: false);
       await server.stop();
       await settings.setServerEnabled(false);
-      state = const ServerState(isRunning: false);
+      state = const ServerState();
     }
   }
 
@@ -147,6 +170,8 @@ final usageRecordsProvider = StreamProvider<List<UsageRecord>>((ref) {
   return Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
     final client = ref.read(remoteApiClientProvider);
     if (client == null) return <UsageRecord>[];
+    // Let the exception propagate — StreamProvider turns it into AsyncError
+    // so the UI can show a "Could not reach remote server" banner.
     return client.getUsage();
   });
 });
