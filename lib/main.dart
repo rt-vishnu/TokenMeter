@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
@@ -11,9 +12,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final prefs = await SharedPreferences.getInstance();
+  const secure = FlutterSecureStorage();
   final pricing = PricingRepository(prefs);
   await pricing.load();
-  await SettingsService(prefs).ensureApiKey();
+  // Initialises the API key (migrating from SharedPreferences if needed).
+  await SettingsService(prefs, secure).init();
 
   runApp(
     ProviderScope(

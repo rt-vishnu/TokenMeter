@@ -70,7 +70,6 @@ class LocalApiServer {
       jsonEncode({
         'ip': _boundAddress,
         'port': _server?.port,
-        'api_key': _settings.apiKey,
         'app_version': AppConstants.appVersion,
       }),
       headers: _jsonHeaders,
@@ -85,6 +84,9 @@ class LocalApiServer {
   }
 
   Future<Response> _getUsage(Request request) async {
+    final authError = _checkAuth(request);
+    if (authError != null) return authError;
+
     final params = request.url.queryParameters;
     final from =
         params['from'] != null ? DateTime.tryParse(params['from']!) : null;
@@ -167,11 +169,19 @@ class LocalApiServer {
 
   Middleware get _corsMiddleware => (Handler innerHandler) {
         return (Request request) async {
+          final origin = request.headers['origin'] ?? '';
+          // Only allow browser requests originating from localhost/127.0.0.1.
+          final isLocalOrigin = origin.contains('localhost') ||
+              origin.contains('127.0.0.1');
+          final corsHeaders = isLocalOrigin
+              ? {..._baseCorsHeaders, 'Access-Control-Allow-Origin': origin}
+              : _baseCorsHeaders;
+
           if (request.method == 'OPTIONS') {
-            return Response.ok('', headers: _corsHeaders);
+            return Response.ok('', headers: corsHeaders);
           }
           final response = await innerHandler(request);
-          return response.change(headers: _corsHeaders);
+          return response.change(headers: corsHeaders);
         };
       };
 
@@ -194,8 +204,8 @@ class LocalApiServer {
       };
 
   static const _jsonHeaders = {'Content-Type': 'application/json'};
-  static const _corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
+  // Origin header is set dynamically in _corsMiddleware for localhost only.
+  static const _baseCorsHeaders = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Content-Type': 'application/json',

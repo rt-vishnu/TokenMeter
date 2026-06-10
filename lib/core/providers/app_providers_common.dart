@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_providers_native.dart'
@@ -13,8 +14,15 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('SharedPreferences must be overridden');
 });
 
+final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
+  return const FlutterSecureStorage();
+});
+
 final settingsServiceProvider = Provider<SettingsService>((ref) {
-  return SettingsService(ref.watch(sharedPreferencesProvider));
+  return SettingsService(
+    ref.watch(sharedPreferencesProvider),
+    ref.watch(secureStorageProvider),
+  );
 });
 
 final pricingRepositoryProvider = Provider<PricingRepository>((ref) {
