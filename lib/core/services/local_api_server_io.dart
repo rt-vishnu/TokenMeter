@@ -113,16 +113,29 @@ class LocalApiServer {
 
     try {
       final body = await request.readAsString();
-      final json = jsonDecode(body) as Map<String, dynamic>;
+      final Map<String, dynamic> json;
+      try {
+        json = jsonDecode(body) as Map<String, dynamic>;
+      } on FormatException {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Invalid JSON body'}),
+          headers: _jsonHeaders,
+        );
+      }
       final payload = UsagePayload.fromJson(json);
       final record = await _usage.recordUsage(payload);
       return Response.ok(
         jsonEncode(record.toJson()),
         headers: _jsonHeaders,
       );
-    } catch (e) {
+    } on ArgumentError catch (e) {
       return Response.badRequest(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': e.message}),
+        headers: _jsonHeaders,
+      );
+    } catch (_) {
+      return Response.badRequest(
+        body: jsonEncode({'error': 'An unexpected error occurred'}),
         headers: _jsonHeaders,
       );
     }
@@ -134,16 +147,29 @@ class LocalApiServer {
 
     try {
       final body = await request.readAsString();
-      final json = jsonDecode(body) as Map<String, dynamic>;
+      final Map<String, dynamic> json;
+      try {
+        json = jsonDecode(body) as Map<String, dynamic>;
+      } on FormatException {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Invalid JSON body'}),
+          headers: _jsonHeaders,
+        );
+      }
       final payload = EstimatePayload.fromJson(json);
       final result = await _usage.estimate(payload);
       return Response.ok(
         jsonEncode(result),
         headers: _jsonHeaders,
       );
-    } catch (e) {
+    } on ArgumentError catch (e) {
       return Response.badRequest(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': e.message}),
+        headers: _jsonHeaders,
+      );
+    } catch (_) {
+      return Response.badRequest(
+        body: jsonEncode({'error': 'An unexpected error occurred'}),
         headers: _jsonHeaders,
       );
     }

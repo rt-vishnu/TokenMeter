@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/usage_payload.dart';
@@ -14,6 +15,7 @@ class CalculatorScreen extends ConsumerStatefulWidget {
 }
 
 class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
+  final _formKey = GlobalKey<FormState>();
   String? _selectedModel;
   final _inputController = TextEditingController();
   final _outputController = TextEditingController();
@@ -33,7 +35,27 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
     super.dispose();
   }
 
+  String? _validateTokenField(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Enter a $fieldName count';
+    }
+    final n = int.tryParse(value);
+    if (n == null) return '$fieldName must be a whole number';
+    if (n < 0) return '$fieldName must be non-negative';
+    if (n > 2000000) return '$fieldName exceeds maximum (2,000,000)';
+    return null;
+  }
+
+  String? _validateTextField(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Enter $fieldName to estimate tokens';
+    }
+    return null;
+  }
+
   void _calculate() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final pricing = ref.read(pricingRepositoryProvider);
     final modelId = _selectedModel;
     if (modelId == null) return;
@@ -47,8 +69,8 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
       output =
           CostCalculator.estimateTokensFromText(_completionController.text);
     } else {
-      input = int.tryParse(_inputController.text) ?? 0;
-      output = int.tryParse(_outputController.text) ?? 0;
+      input = int.parse(_inputController.text);
+      output = int.parse(_outputController.text);
     }
 
     setState(() {
@@ -59,6 +81,8 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   }
 
   Future<void> _calculateRemote() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final modelId = _selectedModel;
     if (modelId == null) return;
 
@@ -99,98 +123,128 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
     final models = ref.watch(pricingRepositoryProvider).sortedModels;
     _selectedModel ??= models.isNotEmpty ? models.first.id : null;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        DropdownButtonFormField<String>(
-          initialValue: _selectedModel,
-          decoration: const InputDecoration(labelText: 'Model'),
-          items: [
-            for (final m in models)
-              DropdownMenuItem(value: m.id, child: Text(m.displayName)),
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _selectedModel,
+            decoration: const InputDecoration(labelText: 'Model'),
+            items: [
+              for (final m in models)
+                DropdownMenuItem(value: m.id, child: Text(m.displayName)),
+            ],
+            validator: (v) => v == null ? 'Select a model' : null,
+            onChanged: (v) => setState(() => _selectedModel = v),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            title: const Text('Estimate from text'),
+            subtitle: const Text('Approximate: tokens ≈ characters / 4'),
+            value: _useTextEstimate,
+            onChanged: (v) {
+              setState(() {
+                _useTextEstimate = v;
+                _estimatedCost = null;
+              });
+              _formKey.currentState?.reset();
+            },
+          ),
+          const SizedBox(height: 8),
+          if (_useTextEstimate) ...[
+            TextFormField(
+              controller: _promptController,
+              decoration: const InputDecoration(
+                labelText: 'Prompt text',
+                alignLabelWithHint: true,
+              ),
+              maxLines: 5,
+              validator: (v) => _validateTextField(v, 'prompt text'),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _completionController,
+              decoration: const InputDecoration(
+                labelText: 'Completion text',
+                alignLabelWithHint: true,
+              ),
+              maxLines: 5,
+              validator: (v) => _validateTextField(v, 'completion text'),
+            ),
+          ] else ...[
+            TextFormField(
+              controller: _inputController,
+              decoration: const InputDecoration(labelText: 'Input tokens'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) => _validateTokenField(v, 'input tokens'),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _outputController,
+              decoration: const InputDecoration(labelText: 'Output tokens'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) => _validateTokenField(v, 'output tokens'),
+            ),
           ],
-          onChanged: (v) => setState(() => _selectedModel = v),
-        ),
-        const SizedBox(height: 16),
-        SwitchListTile(
-          title: const Text('Estimate from text'),
-          subtitle: const Text('Approximate: tokens ≈ characters / 4'),
-          value: _useTextEstimate,
-          onChanged: (v) => setState(() => _useTextEstimate = v),
-        ),
-        const SizedBox(height: 8),
-        if (_useTextEstimate) ...[
-          TextField(
-            controller: _promptController,
-            decoration: const InputDecoration(
-              labelText: 'Prompt text',
-              alignLabelWithHint: true,
-            ),
-            maxLines: 5,
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _calculateRemote,
+            icon: const Icon(Icons.calculate),
+            label: const Text('Calculate Cost'),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _completionController,
-            decoration: const InputDecoration(
-              labelText: 'Completion text',
-              alignLabelWithHint: true,
-            ),
-            maxLines: 5,
-          ),
-        ] else ...[
-          TextField(
-            controller: _inputController,
-            decoration: const InputDecoration(labelText: 'Input tokens'),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _outputController,
-            decoration: const InputDecoration(labelText: 'Output tokens'),
-            keyboardType: TextInputType.number,
-          ),
-        ],
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: _calculateRemote,
-          icon: const Icon(Icons.calculate),
-          label: const Text('Calculate Cost'),
-        ),
-        if (_estimatedCost != null) ...[
-          const SizedBox(height: 24),
-          Card(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Text(
-                    Formatters.currency(_estimatedCost!),
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${Formatters.tokens(_inputTokens!)} input + '
-                    '${Formatters.tokens(_outputTokens!)} output tokens',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  if (_useTextEstimate)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Estimated from text — for exact counts, use IDE integration.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.center,
-                      ),
+          if (_estimatedCost != null) ...[
+            const SizedBox(height: 24),
+            Card(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Text(
+                      Formatters.currency(_estimatedCost!),
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      '${Formatters.tokens(_inputTokens!)} input + '
+                      '${Formatters.tokens(_outputTokens!)} output tokens',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (_inputTokens == 0 && _outputTokens == 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Both token counts are zero — cost is \$0.00.',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    if (_useTextEstimate)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Estimated from text — for exact counts, use IDE integration.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
