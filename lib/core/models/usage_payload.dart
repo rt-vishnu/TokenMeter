@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class UsagePayload {
   const UsagePayload({
     required this.model,
@@ -17,11 +19,31 @@ class UsagePayload {
   final DateTime? timestamp;
   final Map<String, dynamic> metadata;
 
+  static const _maxTokens = 2000000;
+  static const _maxMetadataBytes = 4096;
+  static const _maxSourceLength = 50;
+  static const _maxSessionIdLength = 100;
+  static const _maxModelLength = 100;
+
   factory UsagePayload.fromJson(Map<String, dynamic> json) {
-    return UsagePayload(
-      model: json['model'] as String,
-      inputTokens: json['input_tokens'] as int,
-      outputTokens: json['output_tokens'] as int,
+    final model = json['model'];
+    final inputTokens = json['input_tokens'];
+    final outputTokens = json['output_tokens'];
+
+    if (model is! String) {
+      throw ArgumentError('model must be a string');
+    }
+    if (inputTokens is! int) {
+      throw ArgumentError('input_tokens must be an integer');
+    }
+    if (outputTokens is! int) {
+      throw ArgumentError('output_tokens must be an integer');
+    }
+
+    final payload = UsagePayload(
+      model: model,
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
       source: json['source'] as String? ?? 'unknown',
       sessionId: json['session_id'] as String?,
       timestamp: json['timestamp'] != null
@@ -31,6 +53,51 @@ class UsagePayload {
         json['metadata'] as Map? ?? {},
       ),
     );
+    payload._validate();
+    return payload;
+  }
+
+  void _validate() {
+    if (model.isEmpty) {
+      throw ArgumentError('model must not be empty');
+    }
+    if (model.length > _maxModelLength) {
+      throw ArgumentError('model must not exceed $_maxModelLength characters');
+    }
+    if (inputTokens < 0) {
+      throw ArgumentError('input_tokens must be non-negative');
+    }
+    if (inputTokens > _maxTokens) {
+      throw ArgumentError(
+          'input_tokens exceeds maximum (${_formatInt(_maxTokens)})');
+    }
+    if (outputTokens < 0) {
+      throw ArgumentError('output_tokens must be non-negative');
+    }
+    if (outputTokens > _maxTokens) {
+      throw ArgumentError(
+          'output_tokens exceeds maximum (${_formatInt(_maxTokens)})');
+    }
+    if (source.length > _maxSourceLength) {
+      throw ArgumentError('source must not exceed $_maxSourceLength characters');
+    }
+    if (sessionId != null && sessionId!.length > _maxSessionIdLength) {
+      throw ArgumentError(
+          'session_id must not exceed $_maxSessionIdLength characters');
+    }
+    final metadataSize = utf8.encode(jsonEncode(metadata)).length;
+    if (metadataSize > _maxMetadataBytes) {
+      throw ArgumentError(
+          'metadata must not exceed $_maxMetadataBytes bytes (got $metadataSize bytes)');
+    }
+  }
+
+  static String _formatInt(int n) {
+    // Simple comma formatting for error messages, e.g. 2000000 → "2,000,000"
+    return n.toString().replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+$)'),
+          (m) => '${m[1]},',
+        );
   }
 }
 
@@ -49,13 +116,64 @@ class EstimatePayload {
   final String? promptText;
   final String? completionText;
 
+  static const _maxTokens = 2000000;
+  static const _maxModelLength = 100;
+
   factory EstimatePayload.fromJson(Map<String, dynamic> json) {
-    return EstimatePayload(
-      model: json['model'] as String,
-      inputTokens: json['input_tokens'] as int?,
-      outputTokens: json['output_tokens'] as int?,
+    final model = json['model'];
+    if (model is! String) {
+      throw ArgumentError('model must be a string');
+    }
+
+    final inputTokens = json['input_tokens'];
+    final outputTokens = json['output_tokens'];
+
+    if (inputTokens != null && inputTokens is! int) {
+      throw ArgumentError('input_tokens must be an integer');
+    }
+    if (outputTokens != null && outputTokens is! int) {
+      throw ArgumentError('output_tokens must be an integer');
+    }
+
+    final payload = EstimatePayload(
+      model: model,
+      inputTokens: inputTokens as int?,
+      outputTokens: outputTokens as int?,
       promptText: json['prompt_text'] as String?,
       completionText: json['completion_text'] as String?,
     );
+    payload._validate();
+    return payload;
+  }
+
+  void _validate() {
+    if (model.isEmpty) {
+      throw ArgumentError('model must not be empty');
+    }
+    if (model.length > _maxModelLength) {
+      throw ArgumentError('model must not exceed $_maxModelLength characters');
+    }
+
+    final hasTokens = inputTokens != null || outputTokens != null;
+    final hasText = (promptText != null && promptText!.isNotEmpty) ||
+        (completionText != null && completionText!.isNotEmpty);
+
+    if (!hasTokens && !hasText) {
+      throw ArgumentError(
+          'Provide either token counts or prompt/completion text');
+    }
+
+    if (inputTokens != null && inputTokens! < 0) {
+      throw ArgumentError('input_tokens must be non-negative');
+    }
+    if (inputTokens != null && inputTokens! > _maxTokens) {
+      throw ArgumentError('input_tokens exceeds maximum (2,000,000)');
+    }
+    if (outputTokens != null && outputTokens! < 0) {
+      throw ArgumentError('output_tokens must be non-negative');
+    }
+    if (outputTokens != null && outputTokens! > _maxTokens) {
+      throw ArgumentError('output_tokens exceeds maximum (2,000,000)');
+    }
   }
 }
