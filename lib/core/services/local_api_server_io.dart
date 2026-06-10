@@ -28,11 +28,20 @@ class LocalApiServer {
   String? _boundAddress;
   final _requestTimestamps = <DateTime>[];
 
+  static const portFallbackCount = 4;
+  // 2-second window to drain in-flight requests before force-closing.
+  static const _drainTimeout = Duration(seconds: 2);
+
   bool get isRunning => _server != null;
   String? get boundAddress => _boundAddress;
   int? get port => _server?.port;
+  // Set when a fallback port was used instead of the requested one.
+  int? get requestedPort => _requestedPort;
+  int? _requestedPort;
 
-  Future<void> start(String host, int port) async {
+  /// Tries [port] first, then up to [_portFallbackCount] successive ports.
+  /// Returns the port actually bound, or throws if all attempts fail.
+  Future<int> start(String host, int port) async {
     await stop();
 
     final router = Router()
@@ -48,14 +57,33 @@ class LocalApiServer {
         .addMiddleware(_rateLimitMiddleware)
         .addHandler(router.call);
 
-    _server = await shelf_io.serve(handler, host, port);
-    _boundAddress = host;
+    Object? lastError;
+    for (var attempt = 0; attempt <= portFallbackCount; attempt++) {
+      final candidate = port + attempt;
+      try {
+        _server = await shelf_io.serve(handler, host, candidate);
+        _boundAddress = host;
+        _requestedPort = (attempt == 0) ? null : port;
+        return candidate;
+      } on SocketException catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError!;
   }
 
+  /// Gracefully drains in-flight requests before closing.
   Future<void> stop() async {
-    await _server?.close(force: true);
+    final server = _server;
+    if (server == null) return;
+    // Try graceful drain first; fall back to force after timeout.
+    await server.close(force: false).timeout(
+      _drainTimeout,
+      onTimeout: () => server.close(force: true),
+    );
     _server = null;
     _boundAddress = null;
+    _requestedPort = null;
   }
 
   Response _health(Request request) {

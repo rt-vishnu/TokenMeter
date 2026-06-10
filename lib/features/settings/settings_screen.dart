@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/models/model_pricing.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/services/pricing_repository.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -39,11 +41,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsServiceProvider);
     final isDark = ref.watch(themeModeProvider);
-    final customModels = ref
-        .watch(pricingRepositoryProvider)
-        .sortedModels
-        .where((m) => m.isCustom)
-        .toList();
+    final pricing = ref.watch(pricingRepositoryProvider);
+    final customModels = pricing.sortedModels.where((m) => m.isCustom).toList();
+    final lastUpdated = pricing.lastUpdated;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -87,38 +87,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: () async {
               final port = int.tryParse(_portController.text);
               if (port != null && port > 1024) {
+                final messenger = ScaffoldMessenger.of(context);
                 await settings.setApiPort(port);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Port saved')),
-                  );
-                }
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Port saved')),
+                );
               }
             },
             child: const Text('Save port'),
           ),
           const SizedBox(height: 16),
         ],
-        Text('Custom Models', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        for (final model in customModels)
-          Card(
-            child: ListTile(
-              title: Text(model.displayName),
-              subtitle: Text(
-                'In: \$${model.inputPer1M}/1M · Out: \$${model.outputPer1M}/1M',
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  await ref
-                      .read(pricingRepositoryProvider)
-                      .deleteCustomModel(model.id);
-                  ref.invalidate(pricingRepositoryProvider);
-                  setState(() {});
-                },
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Custom Models',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
+          ],
+        ),
+        if (lastUpdated != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 8),
+            child: Text(
+              'Bundled prices last updated: ${DateFormat.yMMMd().format(lastUpdated)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          )
+        else
+          const SizedBox(height: 8),
+        for (final model in customModels)
+          _CustomModelTile(
+            model: model,
+            bundledModel: pricing.getBundledModel(model.id),
+            onDelete: () async {
+              await ref
+                  .read(pricingRepositoryProvider)
+                  .deleteCustomModel(model.id);
+              ref.invalidate(pricingRepositoryProvider);
+              setState(() {});
+            },
           ),
         OutlinedButton.icon(
           onPressed: () => _showAddModelDialog(context),
@@ -126,10 +138,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           label: const Text('Add custom model'),
         ),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => _showImportDialog(context),
-          icon: const Icon(Icons.upload_file),
-          label: const Text('Import pricing JSON'),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showImportDialog(context),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Import pricing JSON'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: customModels.isEmpty
+                    ? null
+                    : () => _exportCustomModels(context),
+                icon: const Icon(Icons.download),
+                label: const Text('Export custom models'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         Text('About', style: Theme.of(context).textTheme.titleMedium),
@@ -141,6 +169,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _exportCustomModels(BuildContext context) {
+    final json = ref.read(pricingRepositoryProvider).exportCustomModels();
+    Clipboard.setData(ClipboardData(text: json));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Custom models JSON copied to clipboard'),
+      ),
     );
   }
 
@@ -212,48 +250,175 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _showImportDialog(BuildContext context) async {
     final controller = TextEditingController();
+    // Capture before first await so the reference is safe across async gaps.
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Import pricing JSON'),
         content: TextField(
           controller: controller,
           maxLines: 8,
           decoration: const InputDecoration(
-            hintText: '{"my-model": {"input_per_1m": 1.0, ...}}',
+            hintText: '{"my-model": {"display_name": "My Model", "input_per_1m": 1.0, "output_per_1m": 2.0}}',
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Import'),
           ),
         ],
       ),
     );
 
-    if (result == true && controller.text.isNotEmpty) {
-      try {
-        await ref
-            .read(pricingRepositoryProvider)
-            .importPricingJson(controller.text);
-        if (mounted) {
-          setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Pricing imported')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Import failed: $e')),
-          );
-        }
-      }
+    if (result != true || controller.text.trim().isEmpty) return;
+
+    ImportResult importResult;
+    try {
+      importResult = await ref
+          .read(pricingRepositoryProvider)
+          .importPricingJson(controller.text);
+    } on ArgumentError catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Import failed: ${e.message}')),
+      );
+      return;
     }
+
+    if (!mounted) return;
+    setState(() {});
+
+    // Show a detailed result dialog when there were skipped models.
+    if (importResult.hasSkipped) {
+      await showDialog<void>(
+        context: navigator.context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Import complete'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(importResult.summary),
+              if (importResult.skippedReasons.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Skipped models:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                for (final entry in importResult.skippedReasons.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text('• ${entry.key}: ${entry.value}'),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(content: Text(importResult.summary)),
+      );
+    }
+  }
+}
+
+class _CustomModelTile extends StatelessWidget {
+  const _CustomModelTile({
+    required this.model,
+    required this.bundledModel,
+    required this.onDelete,
+  });
+
+  final ModelPricing model;
+  final ModelPricing? bundledModel;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: ListTile(
+          title: Text(model.displayName),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'In: \$${model.inputPer1M}/1M · Out: \$${model.outputPer1M}/1M',
+              ),
+              if (bundledModel != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _DivergenceChip(
+                    custom: model,
+                    bundled: bundledModel!,
+                  ),
+                ),
+            ],
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: onDelete,
+          ),
+          isThreeLine: bundledModel != null,
+        ),
+      ),
+    );
+  }
+}
+
+class _DivergenceChip extends StatelessWidget {
+  const _DivergenceChip({required this.custom, required this.bundled});
+
+  final ModelPricing custom;
+  final ModelPricing bundled;
+
+  String _pctDiff(double customVal, double bundledVal) {
+    if (bundledVal == 0) return '';
+    final diff = ((customVal - bundledVal) / bundledVal * 100).round();
+    return diff >= 0 ? '+$diff%' : '$diff%';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inputDiff = _pctDiff(custom.inputPer1M, bundled.inputPer1M);
+    final outputDiff = _pctDiff(custom.outputPer1M, bundled.outputPer1M);
+
+    return Wrap(
+      spacing: 4,
+      children: [
+        _chip(
+          context,
+          'Bundled in: \$${bundled.inputPer1M} · yours: \$${custom.inputPer1M} ($inputDiff)',
+        ),
+        _chip(
+          context,
+          'Bundled out: \$${bundled.outputPer1M} · yours: \$${custom.outputPer1M} ($outputDiff)',
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, String label) {
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 10)),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      backgroundColor:
+          Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: 0.6),
+    );
   }
 }

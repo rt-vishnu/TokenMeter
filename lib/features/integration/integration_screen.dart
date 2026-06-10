@@ -36,15 +36,33 @@ class IntegrationScreen extends ConsumerWidget {
             child: SwitchListTile(
               title: const Text('Enable API Server'),
               subtitle: Text(
-                serverState.isRunning
-                    ? 'Running on ${serverState.endpoint}'
-                    : 'Start server to receive usage from IDEs',
+                serverState.isStopping
+                    ? 'Stopping server…'
+                    : serverState.isRunning
+                        ? 'Running on ${serverState.endpoint}'
+                        : 'Start server to receive usage from IDEs',
               ),
               value: serverState.isRunning,
-              onChanged: (v) =>
-                  ref.read(serverStateProvider.notifier).toggle(v),
+              onChanged: serverState.isStopping
+                  ? null
+                  : (v) => ref.read(serverStateProvider.notifier).toggle(v),
             ),
           ),
+          if (serverState.isRunning && serverState.usedFallbackPort)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Card(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('Fallback port in use'),
+                  subtitle: Text(
+                    'Port ${serverState.requestedPort} was occupied — '
+                    'started on port ${serverState.port} instead.',
+                  ),
+                ),
+              ),
+            ),
           if (serverState.isRunning)
             Padding(
               padding: const EdgeInsets.only(top: 8),
