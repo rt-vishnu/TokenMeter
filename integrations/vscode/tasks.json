@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "TokenMeter: Report Usage",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/integrations/python/report_usage.py",
+        "--model", "${input:tokenMeterModel}",
+        "--input", "${input:tokenMeterInput}",
+        "--output", "${input:tokenMeterOutput}",
+        "--source", "vscode"
+      ],
+      "options": {
+        "env": {
+          "TOKEN_METER_URL": "${input:tokenMeterUrl}",
+          "TOKEN_METER_API_KEY": "${input:tokenMeterApiKey}"
+        }
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "tokenMeterUrl",
+      "type": "promptString",
+      "description": "TokenMeter API URL",
+      "default": "http://192.168.1.42:8765"
+    },
+    {
+      "id": "tokenMeterApiKey",
+      "type": "promptString",
+      "description": "TokenMeter API key"
+    },
+    {
+      "id": "tokenMeterModel",
+      "type": "promptString",
+      "description": "Model ID",
+      "default": "gpt-4o"
+    },
+    {
+      "id": "tokenMeterInput",
+      "type": "promptString",
+      "description": "Input tokens",
+      "default": "0"
+    },
+    {
+      "id": "tokenMeterOutput",
+      "type": "promptString",
+      "description": "Output tokens",
+      "default": "0"
+    }
+  ]
+}
