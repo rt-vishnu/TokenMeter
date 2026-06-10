@@ -15,14 +15,18 @@ Future<void> main() async {
   const secure = FlutterSecureStorage();
   final pricing = PricingRepository(prefs);
   await pricing.load();
-  // Initialises the API key (migrating from SharedPreferences if needed).
-  await SettingsService(prefs, secure).init();
+
+  // Init settings on the single shared instance so the API key cache is warm
+  // before the provider is read anywhere in the widget tree.
+  final settings = SettingsService(prefs, secure);
+  await settings.init();
 
   runApp(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         pricingRepositoryProvider.overrideWithValue(pricing),
+        settingsServiceProvider.overrideWithValue(settings),
       ],
       child: const _AppBootstrap(),
     ),

@@ -7,7 +7,9 @@ import 'package:intl/intl.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/models/model_pricing.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/providers/app_providers_common.dart';
 import '../../core/services/pricing_repository.dart';
+import '../../core/services/settings_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -85,14 +87,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 8),
           FilledButton(
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               final port = int.tryParse(_portController.text);
-              if (port != null && port > 1024) {
-                final messenger = ScaffoldMessenger.of(context);
-                await settings.setApiPort(port);
+              if (port == null || port <= 1024 || port > 65535) {
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('Port saved')),
+                  const SnackBar(
+                    content: Text('Port must be between 1025 and 65535'),
+                  ),
                 );
+                return;
               }
+              await settings.setApiPort(port);
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Port saved')),
+              );
             },
             child: const Text('Save port'),
           ),
@@ -159,6 +167,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        _BudgetControlsCard(settings: settings),
         const SizedBox(height: 16),
         Text('About', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -419,6 +429,151 @@ class _DivergenceChip extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       backgroundColor:
           Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: 0.6),
+    );
+  }
+}
+
+class _BudgetControlsCard extends StatefulWidget {
+  const _BudgetControlsCard({required this.settings});
+  final SettingsService settings;
+
+  @override
+  State<_BudgetControlsCard> createState() => _BudgetControlsCardState();
+}
+
+class _BudgetControlsCardState extends State<_BudgetControlsCard> {
+  late final TextEditingController _dailyCtrl;
+  late final TextEditingController _weeklyCtrl;
+  late final TextEditingController _monthlyCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _dailyCtrl = TextEditingController(
+        text: widget.settings.dailyBudget?.toStringAsFixed(2) ?? '');
+    _weeklyCtrl = TextEditingController(
+        text: widget.settings.weeklyBudget?.toStringAsFixed(2) ?? '');
+    _monthlyCtrl = TextEditingController(
+        text: widget.settings.monthlyBudget?.toStringAsFixed(2) ?? '');
+  }
+
+  @override
+  void dispose() {
+    _dailyCtrl.dispose();
+    _weeklyCtrl.dispose();
+    _monthlyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save(
+    BuildContext context,
+    String raw,
+    Future<void> Function(double?) setter,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (raw.trim().isEmpty) {
+      await setter(null);
+      messenger.showSnackBar(const SnackBar(content: Text('Budget cleared')));
+      return;
+    }
+    final value = double.tryParse(raw.trim());
+    if (value == null || value <= 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Enter a positive number or leave blank to clear')),
+      );
+      return;
+    }
+    await setter(value);
+    messenger.showSnackBar(const SnackBar(content: Text('Budget saved')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Budget Controls',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Set spending limits. A warning appears at 80%, an alert at 100%.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            _BudgetField(
+              label: 'Daily budget (USD)',
+              controller: _dailyCtrl,
+              onSave: (v) =>
+                  _save(context, v, widget.settings.setDailyBudget),
+            ),
+            const SizedBox(height: 8),
+            _BudgetField(
+              label: 'Weekly budget (USD)',
+              controller: _weeklyCtrl,
+              onSave: (v) =>
+                  _save(context, v, widget.settings.setWeeklyBudget),
+            ),
+            const SizedBox(height: 8),
+            _BudgetField(
+              label: 'Monthly budget (USD)',
+              controller: _monthlyCtrl,
+              onSave: (v) =>
+                  _save(context, v, widget.settings.setMonthlyBudget),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BudgetField extends StatelessWidget {
+  const _BudgetField({
+    required this.label,
+    required this.controller,
+    required this.onSave,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final void Function(String) onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: 'e.g. 5.00',
+              isDense: true,
+              suffixIcon: controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        controller.clear();
+                        onSave('');
+                      },
+                    )
+                  : null,
+            ),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: () => onSave(controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

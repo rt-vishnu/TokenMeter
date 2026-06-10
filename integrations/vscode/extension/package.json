@@ -1,0 +1,61 @@
+{
+  "name": "tokenmeter-vscode",
+  "displayName": "TokenMeter",
+  "description": "Automatically track AI token usage and costs in TokenMeter",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "TokenMeter",
+      "properties": {
+        "tokenmeter.url": {
+          "type": "string",
+          "default": "http://127.0.0.1:8765",
+          "description": "TokenMeter API server URL (from Integration screen)"
+        },
+        "tokenmeter.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "TokenMeter API key (from Integration screen)"
+        },
+        "tokenmeter.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic token tracking"
+        },
+        "tokenmeter.source": {
+          "type": "string",
+          "default": "vscode",
+          "description": "Source label shown in TokenMeter (e.g. vscode, copilot)"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "tokenmeter.showStatus",
+        "title": "TokenMeter: Show Status"
+      },
+      {
+        "command": "tokenmeter.testConnection",
+        "title": "TokenMeter: Test Connection"
+      },
+      {
+        "command": "tokenmeter.openSettings",
+        "title": "TokenMeter: Open Settings"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

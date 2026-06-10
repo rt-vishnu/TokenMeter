@@ -13,6 +13,19 @@ abstract class UsageRepositoryBase {
 
   Future<UsageRecord> recordUsage(UsagePayload payload);
 
+  Future<bool> deleteRecord(String id);
+
+  Future<List<UsageRecord>> getRecordsPaged({
+    DateTime? from,
+    DateTime? to,
+    String? source,
+    String? model,
+    int limit = 200,
+    int offset = 0,
+  });
+
+  Future<int> countRecords();
+
   Future<Map<String, dynamic>> estimate(EstimatePayload payload);
 
   Future<double> totalCostSince(DateTime since);

@@ -89,6 +89,33 @@ class AppDatabase extends _$AppDatabase {
     }
     return result;
   }
+
+  Future<int> countRecords() => (select(usageRecords)).get().then((r) => r.length);
+
+  Future<List<UsageRecord>> getRecordsPaged({
+    DateTime? from,
+    DateTime? to,
+    String? source,
+    String? model,
+    int limit = 200,
+    int offset = 0,
+  }) {
+    final query = select(usageRecords);
+    if (from != null) query.where((t) => t.createdAt.isBiggerOrEqualValue(from));
+    if (to != null) query.where((t) => t.createdAt.isSmallerOrEqualValue(to));
+    if (source != null && source.isNotEmpty) query.where((t) => t.source.equals(source));
+    if (model != null && model.isNotEmpty) query.where((t) => t.model.equals(model));
+    query.orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
+    query.limit(limit, offset: offset);
+    return query.get();
+  }
+
+  Future<bool> deleteRecord(String id) async {
+    final count = await (delete(usageRecords)
+          ..where((t) => t.id.equals(id)))
+        .go();
+    return count > 0;
+  }
 }
 
 LazyDatabase _openConnection() {

@@ -45,6 +45,8 @@ class PricingRepository {
 
   Map<String, ModelPricing> get models => Map.unmodifiable(_models);
   DateTime? get lastUpdated => _lastUpdated;
+  String? get loadError => _loadError;
+  String? _loadError;
 
   List<ModelPricing> get sortedModels {
     final list = _models.values.toList();
@@ -53,8 +55,26 @@ class PricingRepository {
   }
 
   Future<void> load() async {
-    final bundled = await rootBundle.loadString(AppConstants.pricingAssetPath);
-    final bundledMap = jsonDecode(bundled) as Map<String, dynamic>;
+    final String bundled;
+    try {
+      bundled = await rootBundle.loadString(AppConstants.pricingAssetPath);
+    } catch (e) {
+      _loadError = 'Could not load bundled pricing data: $e';
+      _models = {};
+      _bundledModels = Map.unmodifiable({});
+      return;
+    }
+
+    final Map<String, dynamic> bundledMap;
+    try {
+      bundledMap = jsonDecode(bundled) as Map<String, dynamic>;
+    } catch (e) {
+      _loadError = 'Pricing JSON is malformed: $e';
+      _models = {};
+      _bundledModels = Map.unmodifiable({});
+      return;
+    }
+    _loadError = null;
 
     // Read optional metadata block.
     final meta = bundledMap['_meta'] as Map<String, dynamic>?;

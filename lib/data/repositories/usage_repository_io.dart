@@ -115,6 +115,32 @@ class UsageRepository implements UsageRepositoryBase {
   }
 
   @override
+  Future<bool> deleteRecord(String id) => _db.deleteRecord(id);
+
+  @override
+  Future<List<domain.UsageRecord>> getRecordsPaged({
+    DateTime? from,
+    DateTime? to,
+    String? source,
+    String? model,
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final rows = await _db.getRecordsPaged(
+      from: from,
+      to: to,
+      source: source,
+      model: model,
+      limit: limit,
+      offset: offset,
+    );
+    return rows.map(_toDomain).toList();
+  }
+
+  @override
+  Future<int> countRecords() => _db.countRecords();
+
+  @override
   Future<double> totalCostSince(DateTime since) => _db.getTotalCostSince(since);
 
   @override
