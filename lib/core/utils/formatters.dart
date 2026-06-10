@@ -7,7 +7,10 @@ class Formatters {
   static final _dateTime = DateFormat('MMM d, yyyy HH:mm');
   static final _number = NumberFormat.decimalPattern();
 
-  static String currency(double value) => _currency.format(value);
+  static String currency(double value) {
+    if (value > 0 && value < 0.00005) return '<\$0.0001';
+    return _currency.format(value);
+  }
 
   static String compactCurrency(double value) =>
       _compactCurrency.format(value);

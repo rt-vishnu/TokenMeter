@@ -34,10 +34,12 @@ Find your API key on the Integration screen.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/v1/health` | No | Health check |
-| GET | `/api/v1/info` | No | Device IP, port, API key |
+| GET | `/api/v1/info` | No | Device IP, port, app version |
 | GET | `/api/v1/models` | No | List models and pricing |
-| GET | `/api/v1/usage` | No | Query usage history |
+| GET | `/api/v1/usage` | Yes | Query usage history (`?limit=N&offset=N&from=&to=&source=&model=`) |
 | POST | `/api/v1/usage` | Yes | Record a usage event |
+| DELETE | `/api/v1/usage/:id` | Yes | Delete a usage record by ID |
+| GET | `/api/v1/stats` | Yes | Today / week / month aggregates |
 | POST | `/api/v1/estimate` | Yes | Estimate cost without saving |
 
 ### POST /api/v1/usage
@@ -96,7 +98,25 @@ Wire into Cursor via `.cursor/hooks.json` or a task that runs after agent comple
 
 ## VS Code
 
-Add a task in `.vscode/tasks.json` (see `integrations/vscode/tasks.json`) or use the Python client from a VS Code extension's `onDidChangeTextDocument` handler.
+A full VS Code extension is provided in `integrations/vscode/extension/`. It:
+
+- Shows today's cost in the status bar (refreshes every 30 s via `/api/v1/stats`)
+- Provides an `@tokenmeter` Copilot Chat participant that auto-reports token usage
+- Adds **TokenMeter: Test Connection** and **TokenMeter: Show Status** commands
+
+**Quick setup:**
+
+```bash
+cd integrations/vscode/extension
+npm install && npm run compile
+# Then in VS Code: F1 → "Developer: Install Extension from Location" → pick this folder
+```
+
+Configure via VS Code Settings → Extensions → TokenMeter:
+- `tokenmeter.url` — e.g. `http://127.0.0.1:8765`
+- `tokenmeter.apiKey` — from Integration screen
+
+See `integrations/vscode/extension/README.md` for full setup and troubleshooting.
 
 ## Python
 

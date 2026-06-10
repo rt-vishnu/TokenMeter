@@ -50,11 +50,14 @@ class LocalApiServer {
       ..get('/api/v1/models', _models)
       ..get('/api/v1/usage', _getUsage)
       ..post('/api/v1/usage', _postUsage)
+      ..delete('/api/v1/usage/<id>', _deleteUsage)
+      ..get('/api/v1/stats', _getStats)
       ..post('/api/v1/estimate', _postEstimate);
 
     final handler = Pipeline()
         .addMiddleware(_corsMiddleware)
         .addMiddleware(_rateLimitMiddleware)
+        .addMiddleware(_authMiddleware)
         .addHandler(router.call);
 
     Object? lastError;
@@ -112,33 +115,97 @@ class LocalApiServer {
   }
 
   Future<Response> _getUsage(Request request) async {
-    final authError = _checkAuth(request);
-    if (authError != null) return authError;
-
     final params = request.url.queryParameters;
-    final from =
-        params['from'] != null ? DateTime.tryParse(params['from']!) : null;
+    final from = params['from'] != null ? DateTime.tryParse(params['from']!) : null;
     final to = params['to'] != null ? DateTime.tryParse(params['to']!) : null;
     final source = params['source'];
     final model = params['model'];
+    final limit = int.tryParse(params['limit'] ?? '') ?? 200;
+    final offset = int.tryParse(params['offset'] ?? '') ?? 0;
 
-    final records = await _usage.getRecords(
+    if (limit < 1 || limit > 1000 || offset < 0) {
+      return Response.badRequest(
+        body: jsonEncode({'error': 'limit must be 1–1000 and offset ≥ 0'}),
+        headers: _jsonHeaders,
+      );
+    }
+
+    final records = await _usage.getRecordsPaged(
       from: from,
       to: to,
       source: source,
       model: model,
+      limit: limit,
+      offset: offset,
     );
+    final total = await _usage.countRecords();
 
     return Response.ok(
-      jsonEncode({'records': records.map((r) => r.toJson()).toList()}),
+      jsonEncode({
+        'records': records.map((r) => r.toJson()).toList(),
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+      }),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _deleteUsage(Request request, String id) async {
+    final deleted = await _usage.deleteRecord(id);
+    if (!deleted) {
+      return Response.notFound(
+        jsonEncode({'error': 'Record not found'}),
+        headers: _jsonHeaders,
+      );
+    }
+    return Response.ok(
+      jsonEncode({'deleted': true, 'id': id}),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _getStats(Request request) async {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final startOfWeek = startOfDay.subtract(Duration(days: now.weekday - 1));
+    final startOfMonth = DateTime(now.year, now.month, 1);
+
+    final allRecords = await _usage.getRecords();
+
+    double todayCost = 0, weekCost = 0, monthCost = 0;
+    int todayTokens = 0, weekTokens = 0, monthTokens = 0;
+    int todayReqs = 0, weekReqs = 0, monthReqs = 0;
+
+    for (final r in allRecords) {
+      if (!r.createdAt.isBefore(startOfMonth)) {
+        monthCost += r.costUsd;
+        monthTokens += r.totalTokens;
+        monthReqs++;
+      }
+      if (!r.createdAt.isBefore(startOfWeek)) {
+        weekCost += r.costUsd;
+        weekTokens += r.totalTokens;
+        weekReqs++;
+      }
+      if (!r.createdAt.isBefore(startOfDay)) {
+        todayCost += r.costUsd;
+        todayTokens += r.totalTokens;
+        todayReqs++;
+      }
+    }
+
+    return Response.ok(
+      jsonEncode({
+        'today': {'cost': todayCost, 'tokens': todayTokens, 'requests': todayReqs},
+        'week': {'cost': weekCost, 'tokens': weekTokens, 'requests': weekReqs},
+        'month': {'cost': monthCost, 'tokens': monthTokens, 'requests': monthReqs},
+      }),
       headers: _jsonHeaders,
     );
   }
 
   Future<Response> _postUsage(Request request) async {
-    final authError = _checkAuth(request);
-    if (authError != null) return authError;
-
     try {
       final body = await request.readAsString();
       final Map<String, dynamic> json;
@@ -170,9 +237,6 @@ class LocalApiServer {
   }
 
   Future<Response> _postEstimate(Request request) async {
-    final authError = _checkAuth(request);
-    if (authError != null) return authError;
-
     try {
       final body = await request.readAsString();
       final Map<String, dynamic> json;
@@ -203,23 +267,31 @@ class LocalApiServer {
     }
   }
 
-  Response? _checkAuth(Request request) {
-    final header = request.headers['authorization'];
-    if (header == null || !header.startsWith('Bearer ')) {
-      return Response.forbidden(
-        jsonEncode({'error': 'Missing or invalid Authorization header'}),
-        headers: _jsonHeaders,
-      );
-    }
-    final token = header.substring(7);
-    if (token != _settings.apiKey) {
-      return Response.forbidden(
-        jsonEncode({'error': 'Invalid API key'}),
-        headers: _jsonHeaders,
-      );
-    }
-    return null;
-  }
+  // Public paths that do not require an API key.
+  static const _publicPaths = {'api/v1/health', 'api/v1/info', 'api/v1/models'};
+
+  Middleware get _authMiddleware => (Handler innerHandler) {
+        return (Request request) async {
+          if (_publicPaths.contains(request.url.path)) {
+            return innerHandler(request);
+          }
+          final header = request.headers['authorization'];
+          if (header == null || !header.startsWith('Bearer ')) {
+            return Response.forbidden(
+              jsonEncode({'error': 'Missing or invalid Authorization header'}),
+              headers: _jsonHeaders,
+            );
+          }
+          final token = header.substring(7);
+          if (token != _settings.apiKey) {
+            return Response.forbidden(
+              jsonEncode({'error': 'Invalid API key'}),
+              headers: _jsonHeaders,
+            );
+          }
+          return innerHandler(request);
+        };
+      };
 
   Middleware get _corsMiddleware => (Handler innerHandler) {
         return (Request request) async {

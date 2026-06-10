@@ -18,6 +18,9 @@ class SettingsService {
   static const _remoteHostKey = 'remote_host_url';
   static const _darkModeKey = 'dark_mode';
   static const _currencyKey = 'currency';
+  static const _dailyBudgetKey = 'daily_budget';
+  static const _weeklyBudgetKey = 'weekly_budget';
+  static const _monthlyBudgetKey = 'monthly_budget';
 
   // Cached in memory after first load to avoid async on every read.
   String? _cachedApiKey;
@@ -84,6 +87,34 @@ class SettingsService {
 
   Future<void> setCurrency(String value) =>
       _prefs.setString(_currencyKey, value);
+
+  double? get dailyBudget => _prefs.getDouble(_dailyBudgetKey);
+  double? get weeklyBudget => _prefs.getDouble(_weeklyBudgetKey);
+  double? get monthlyBudget => _prefs.getDouble(_monthlyBudgetKey);
+
+  Future<void> setDailyBudget(double? value) async {
+    if (value == null) {
+      await _prefs.remove(_dailyBudgetKey);
+    } else {
+      await _prefs.setDouble(_dailyBudgetKey, value);
+    }
+  }
+
+  Future<void> setWeeklyBudget(double? value) async {
+    if (value == null) {
+      await _prefs.remove(_weeklyBudgetKey);
+    } else {
+      await _prefs.setDouble(_weeklyBudgetKey, value);
+    }
+  }
+
+  Future<void> setMonthlyBudget(double? value) async {
+    if (value == null) {
+      await _prefs.remove(_monthlyBudgetKey);
+    } else {
+      await _prefs.setDouble(_monthlyBudgetKey, value);
+    }
+  }
 
   bool get isWebClientMode {
     final host = remoteHostUrl;
