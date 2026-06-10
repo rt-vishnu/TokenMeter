@@ -45,6 +45,21 @@ class IntegrationScreen extends ConsumerWidget {
                   ref.read(serverStateProvider.notifier).toggle(v),
             ),
           ),
+          if (serverState.isRunning)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Card(
+                color: Colors.amber.shade800.withValues(alpha: 0.2),
+                child: ListTile(
+                  leading: const Icon(Icons.warning_amber_rounded,
+                      color: Colors.amber),
+                  title: const Text('Unencrypted connection'),
+                  subtitle: const Text(
+                    'API server is running over HTTP. Only use on trusted networks.',
+                  ),
+                ),
+              ),
+            ),
           if (serverState.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -55,7 +70,12 @@ class IntegrationScreen extends ConsumerWidget {
             ),
         ],
         const SizedBox(height: 16),
-        _InfoTile(label: 'API Key', value: apiKey, copyable: true),
+        _InfoTile(
+          label: 'API Key',
+          value: apiKey,
+          copyable: true,
+          onRegenerate: () => _confirmRegenerate(context, ref),
+        ),
         if (endpoint != null) ...[
           const SizedBox(height: 8),
           _InfoTile(label: 'Endpoint', value: endpoint, copyable: true),
@@ -95,6 +115,44 @@ class IntegrationScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _confirmRegenerate(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Regenerate API Key?'),
+        content: const Text(
+          'This will invalidate all existing integrations using the current key. '
+          'You will need to update them with the new key.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Regenerate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(settingsServiceProvider).regenerateApiKey();
+    // Restart the server if running so it picks up the new key.
+    final notifier = ref.read(serverStateProvider.notifier);
+    if (ref.read(serverStateProvider).isRunning) {
+      await notifier.toggle(false);
+      await notifier.toggle(true);
+    }
+    // Refresh providers that depend on the settings.
+    ref.invalidate(settingsServiceProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API key regenerated')),
+      );
+    }
   }
 
   String _curlSnippet(String? endpoint, String apiKey) {
@@ -141,11 +199,13 @@ class _InfoTile extends StatelessWidget {
     required this.label,
     required this.value,
     this.copyable = false,
+    this.onRegenerate,
   });
 
   final String label;
   final String value;
   final bool copyable;
+  final VoidCallback? onRegenerate;
 
   @override
   Widget build(BuildContext context) {
@@ -153,8 +213,17 @@ class _InfoTile extends StatelessWidget {
       child: ListTile(
         title: Text(label),
         subtitle: SelectableText(value),
-        trailing: copyable
-            ? IconButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onRegenerate != null)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Regenerate key',
+                onPressed: onRegenerate,
+              ),
+            if (copyable)
+              IconButton(
                 icon: const Icon(Icons.copy),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: value));
@@ -162,8 +231,9 @@ class _InfoTile extends StatelessWidget {
                     SnackBar(content: Text('$label copied')),
                   );
                 },
-              )
-            : null,
+              ),
+          ],
+        ),
       ),
     );
   }
