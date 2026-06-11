@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,11 +31,16 @@ final pricingRepositoryProvider = Provider<PricingRepository>((ref) {
   throw UnimplementedError('PricingRepository must be initialized');
 });
 
+final remoteSettingsRevisionProvider = StateProvider<int>((ref) => 0);
+
 final remoteApiClientProvider = Provider<RemoteApiClient?>((ref) {
+  ref.watch(remoteSettingsRevisionProvider);
   final settings = ref.watch(settingsServiceProvider);
   final host = settings.remoteHostUrl;
   if (host == null || host.isEmpty) return null;
-  return RemoteApiClient(baseUrl: host, apiKey: settings.apiKey);
+  final apiKey = settings.remoteApiKey;
+  if (apiKey == null || apiKey.isEmpty) return null;
+  return RemoteApiClient(baseUrl: host, apiKey: apiKey);
 });
 
 final networkServiceProvider = Provider<NetworkService>((ref) {
@@ -137,13 +140,15 @@ class ServerStateNotifier extends StateNotifier<ServerState> {
           port: boundPort,
           requestedPort: boundPort != port ? port : null,
         );
-      } on SocketException {
-        state = ServerState(
-          error: 'Port $port and the next ${LocalApiServer.portFallbackCount} '
-              'ports are all in use. Change the port in Settings.',
-        );
       } catch (e) {
-        state = ServerState(error: 'Failed to start server: $e');
+        if (LocalApiServer.isPortBindError(e)) {
+          state = ServerState(
+            error: 'Port $port and the next ${LocalApiServer.portFallbackCount} '
+                'ports are all in use. Change the port in Settings.',
+          );
+        } else {
+          state = ServerState(error: 'Failed to start server: $e');
+        }
       }
     } else {
       state = state.copyWith(isStopping: true, isRunning: false);

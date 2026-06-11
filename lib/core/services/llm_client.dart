@@ -7,8 +7,7 @@ import 'package:http/http.dart' as http;
 enum LlmProvider {
   gemini,
   openai,
-  anthropic,
-  ollama;
+  anthropic;
 
   static LlmProvider fromId(String? id) => LlmProvider.values.firstWhere(
         (p) => p.name == id,
@@ -21,7 +20,6 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.gemini => 'Google Gemini',
         LlmProvider.openai => 'OpenAI',
         LlmProvider.anthropic => 'Anthropic Claude',
-        LlmProvider.ollama => 'Ollama (local)',
       };
 
   /// The `provider` value used in the bundled pricing data, so the model
@@ -30,18 +28,13 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.gemini => 'google',
         LlmProvider.openai => 'openai',
         LlmProvider.anthropic => 'anthropic',
-        LlmProvider.ollama => 'meta',
       };
 
-  /// Ollama runs locally and needs only a base URL, not an API key.
-  bool get usesApiKey => this != LlmProvider.ollama;
-
-  /// Where the user gets an API key (or installs the runtime, for Ollama).
+  /// Where the user gets an API key.
   String get setupUrl => switch (this) {
         LlmProvider.gemini => 'https://aistudio.google.com/apikey',
         LlmProvider.openai => 'https://platform.openai.com/api-keys',
         LlmProvider.anthropic => 'https://console.anthropic.com/settings/keys',
-        LlmProvider.ollama => 'https://ollama.com/download',
       };
 
   String get id => name;
@@ -79,11 +72,7 @@ abstract class LlmClient {
     required List<ChatTurn> history,
   });
 
-  factory LlmClient.forProvider(
-    LlmProvider provider, {
-    String apiKey = '',
-    String baseUrl = 'http://localhost:11434',
-  }) {
+  factory LlmClient.forProvider(LlmProvider provider, {String apiKey = ''}) {
     switch (provider) {
       case LlmProvider.gemini:
         return _GeminiClient(apiKey);
@@ -91,8 +80,6 @@ abstract class LlmClient {
         return _OpenAiClient(apiKey);
       case LlmProvider.anthropic:
         return _AnthropicClient(apiKey);
-      case LlmProvider.ollama:
-        return _OllamaClient(baseUrl);
     }
   }
 }
@@ -309,49 +296,3 @@ class _AnthropicClient implements LlmClient {
   }
 }
 
-// ── Ollama (local) ────────────────────────────────────────────────────────────
-
-class _OllamaClient implements LlmClient {
-  _OllamaClient(this.baseUrl);
-  final String baseUrl;
-
-  @override
-  Future<ChatResult> complete({
-    required String model,
-    required List<ChatTurn> history,
-  }) async {
-    final normalized =
-        baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
-
-    final res = await _post(
-      Uri.parse('$normalized/api/chat'),
-      {'Content-Type': 'application/json'},
-      {
-        'model': model,
-        'stream': false,
-        'messages': [
-          for (final t in history)
-            {'role': t.isUser ? 'user' : 'assistant', 'content': t.text},
-        ],
-      },
-    );
-
-    if (res.statusCode != 200) {
-      final msg = _apiErrorMessage(res.body);
-      if (res.statusCode == 404) {
-        throw LlmException(
-            'Model "$model" not pulled. Run: ollama pull $model');
-      }
-      throw LlmException('Ollama error ${res.statusCode}: $msg');
-    }
-
-    final json = jsonDecode(res.body) as Map<String, dynamic>;
-    final text = (json['message'] as Map?)?['content'] as String? ??
-        '(no text in response)';
-    return ChatResult(
-      text: text.trim(),
-      inputTokens: (json['prompt_eval_count'] as num?)?.toInt() ?? 0,
-      outputTokens: (json['eval_count'] as num?)?.toInt() ?? 0,
-    );
-  }
-}

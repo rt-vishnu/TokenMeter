@@ -37,7 +37,6 @@ class _ChatMessage {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _inputController = TextEditingController();
-  final _ollamaModelController = TextEditingController();
   final _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
   bool _sending = false;
@@ -46,7 +45,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void dispose() {
     _inputController.dispose();
-    _ollamaModelController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -81,10 +79,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final model = _currentModel(settings, pricing, provider);
 
     if (model.isEmpty) {
-      _showSnack('Pick or enter a model first.');
+      _showSnack('Pick a model first.');
       return;
     }
-    if (provider.usesApiKey && settings.chatApiKey(provider.id) == null) {
+    if (settings.chatApiKey(provider.id) == null) {
       return;
     }
 
@@ -103,21 +101,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final client = LlmClient.forProvider(
       provider,
       apiKey: settings.chatApiKey(provider.id) ?? '',
-      baseUrl: settings.ollamaBaseUrl,
     );
 
     try {
       final reply = await client.complete(model: model, history: history);
 
-      // Cost: from pricing if known; local Ollama models default to free.
-      final known = pricing.getModel(model);
-      final cost = (known == null && provider == LlmProvider.ollama)
-          ? 0.0
-          : CostCalculator.calculateCost(
-              pricing.getModelOrDefault(model),
-              reply.inputTokens,
-              reply.outputTokens,
-            );
+      final cost = CostCalculator.calculateCost(
+        pricing.getModelOrDefault(model),
+        reply.inputTokens,
+        reply.outputTokens,
+      );
 
       await ref.read(usageRecorderProvider).record(
             UsagePayload(
@@ -169,10 +162,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     PricingRepository pricing,
     LlmProvider provider,
   ) {
-    if (provider == LlmProvider.ollama) {
-      final typed = _ollamaModelController.text.trim();
-      return typed.isNotEmpty ? typed : settings.chatModel;
-    }
     final models = _modelsFor(provider, pricing);
     if (models.contains(settings.chatModel)) return settings.chatModel;
     return models.isNotEmpty ? models.first : '';
@@ -188,10 +177,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final pricing = ref.read(pricingRepositoryProvider);
     await settings.setChatProvider(provider.id);
     // Reset the model to a sensible default for the new provider.
-    if (provider != LlmProvider.ollama) {
-      final models = _modelsFor(provider, pricing);
-      if (models.isNotEmpty) await settings.setChatModel(models.first);
-    }
+    final models = _modelsFor(provider, pricing);
+    if (models.isNotEmpty) await settings.setChatModel(models.first);
     if (mounted) setState(() {});
   }
 
@@ -200,13 +187,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final settings = ref.watch(settingsServiceProvider);
     final pricing = ref.watch(pricingRepositoryProvider);
     final provider = LlmProvider.fromId(settings.chatProvider);
-    final needsKey =
-        provider.usesApiKey && settings.chatApiKey(provider.id) == null;
-
-    if (_ollamaModelController.text.isEmpty &&
-        provider == LlmProvider.ollama) {
-      _ollamaModelController.text = settings.chatModel;
-    }
+    final needsKey = settings.chatApiKey(provider.id) == null;
 
     return Column(
       children: [
@@ -222,7 +203,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             models: _modelsFor(provider, pricing),
             pricing: pricing,
             selected: _currentModel(settings, pricing, provider),
-            ollamaController: _ollamaModelController,
             onModelChanged: (id) async {
               await settings.setChatModel(id);
               if (mounted) setState(() {});
@@ -285,40 +265,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _showConfigDialog(
       BuildContext context, LlmProvider provider) async {
     final settings = ref.read(settingsServiceProvider);
-
-    if (provider == LlmProvider.ollama) {
-      final controller =
-          TextEditingController(text: settings.ollamaBaseUrl);
-      final action = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Ollama server'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: 'Base URL',
-              hintText: 'http://localhost:11434',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, 'save'),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      );
-      if (action == 'save' && controller.text.trim().isNotEmpty) {
-        await settings.setOllamaBaseUrl(controller.text);
-      }
-      if (mounted) setState(() {});
-      return;
-    }
-
     final controller = TextEditingController();
     final action = await showDialog<String>(
       context: context,
@@ -409,8 +355,8 @@ class _ProviderBar extends StatelessWidget {
             ],
           ),
           IconButton(
-            icon: Icon(provider.usesApiKey ? Icons.key : Icons.settings),
-            tooltip: provider.usesApiKey ? 'Change API key' : 'Server settings',
+            icon: const Icon(Icons.key),
+            tooltip: 'Change API key',
             onPressed: onConfigure,
           ),
         ],
@@ -419,7 +365,7 @@ class _ProviderBar extends StatelessWidget {
   }
 }
 
-// ── Model selector (dropdown for cloud, text field for Ollama) ──────────────
+// ── Model selector ────────────────────────────────────────────────────────
 
 class _ModelSelector extends StatelessWidget {
   const _ModelSelector({
@@ -427,7 +373,6 @@ class _ModelSelector extends StatelessWidget {
     required this.models,
     required this.pricing,
     required this.selected,
-    required this.ollamaController,
     required this.onModelChanged,
   });
 
@@ -435,42 +380,31 @@ class _ModelSelector extends StatelessWidget {
   final List<String> models;
   final PricingRepository pricing;
   final String selected;
-  final TextEditingController ollamaController;
   final ValueChanged<String> onModelChanged;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: provider == LlmProvider.ollama
-          ? TextField(
-              controller: ollamaController,
-              decoration: const InputDecoration(
-                labelText: 'Model (e.g. llama3.2)',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onChanged: onModelChanged,
-            )
-          : DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: models.contains(selected) ? selected : null,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                for (final id in models)
-                  DropdownMenuItem(
-                    value: id,
-                    child: Text(pricing.getModelOrDefault(id).displayName),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v != null) onModelChanged(v);
-              },
+      child: DropdownButtonFormField<String>(
+        isExpanded: true,
+        initialValue: models.contains(selected) ? selected : null,
+        decoration: const InputDecoration(
+          labelText: 'Model',
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          for (final id in models)
+            DropdownMenuItem(
+              value: id,
+              child: Text(pricing.getModelOrDefault(id).displayName),
             ),
+        ],
+        onChanged: (v) {
+          if (v != null) onModelChanged(v);
+        },
+      ),
     );
   }
 }

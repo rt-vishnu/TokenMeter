@@ -16,6 +16,7 @@ class SettingsService {
   static const _serverEnabledKey = 'server_enabled';
   static const _apiPortKey = 'api_port';
   static const _remoteHostKey = 'remote_host_url';
+  static const _remoteApiKeySecureKey = 'remote_api_key';
   static const _darkModeKey = 'dark_mode';
   static const _currencyKey = 'currency';
   static const _dailyBudgetKey = 'daily_budget';
@@ -24,7 +25,6 @@ class SettingsService {
   static const _geminiKeySecureKey = 'gemini_api_key';
   static const _openaiKeySecureKey = 'openai_api_key';
   static const _anthropicKeySecureKey = 'anthropic_api_key';
-  static const _ollamaBaseUrlKey = 'ollama_base_url';
   static const _chatProviderKey = 'chat_provider';
   static const _chatModelKey = 'chat_model';
 
@@ -33,12 +33,14 @@ class SettingsService {
   String? _cachedGeminiKey;
   String? _cachedOpenaiKey;
   String? _cachedAnthropicKey;
+  String? _cachedRemoteApiKey;
 
   /// Call once at startup to migrate legacy key and warm the cache.
   Future<void> init() async {
     _cachedGeminiKey = await _secure.read(key: _geminiKeySecureKey);
     _cachedOpenaiKey = await _secure.read(key: _openaiKeySecureKey);
     _cachedAnthropicKey = await _secure.read(key: _anthropicKeySecureKey);
+    _cachedRemoteApiKey = await _secure.read(key: _remoteApiKeySecureKey);
 
     final existing = await _secure.read(key: _apiKeySecureKey);
     if (existing != null) {
@@ -92,6 +94,20 @@ class SettingsService {
     }
   }
 
+  /// API key from the phone/desktop TokenMeter instance (web client only).
+  String? get remoteApiKey => _cachedRemoteApiKey;
+
+  Future<void> setRemoteApiKey(String? key) async {
+    final trimmed = key?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      await _secure.delete(key: _remoteApiKeySecureKey);
+      _cachedRemoteApiKey = null;
+    } else {
+      await _secure.write(key: _remoteApiKeySecureKey, value: trimmed);
+      _cachedRemoteApiKey = trimmed;
+    }
+  }
+
   bool get darkMode => _prefs.getBool(_darkModeKey) ?? true;
 
   Future<void> setDarkMode(bool value) => _prefs.setBool(_darkModeKey, value);
@@ -139,7 +155,7 @@ class SettingsService {
         'gemini' => _cachedGeminiKey,
         'openai' => _cachedOpenaiKey,
         'anthropic' => _cachedAnthropicKey,
-        _ => null, // ollama and others need no key
+        _ => null,
       };
 
   Future<void> setChatApiKey(String providerId, String? value) async {
@@ -167,13 +183,7 @@ class SettingsService {
     }
   }
 
-  String get ollamaBaseUrl =>
-      _prefs.getString(_ollamaBaseUrlKey) ?? 'http://localhost:11434';
-
-  Future<void> setOllamaBaseUrl(String value) =>
-      _prefs.setString(_ollamaBaseUrlKey, value.trim());
-
-  /// Selected chat provider id (gemini/openai/anthropic/ollama).
+  /// Selected chat provider id (gemini/openai/anthropic).
   String get chatProvider => _prefs.getString(_chatProviderKey) ?? 'gemini';
 
   Future<void> setChatProvider(String value) =>

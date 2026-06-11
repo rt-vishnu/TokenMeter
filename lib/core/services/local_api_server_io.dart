@@ -32,6 +32,8 @@ class LocalApiServer {
   // 2-second window to drain in-flight requests before force-closing.
   static const _drainTimeout = Duration(seconds: 2);
 
+  static bool isPortBindError(Object error) => error is SocketException;
+
   bool get isRunning => _server != null;
   String? get boundAddress => _boundAddress;
   int? get port => _server?.port;

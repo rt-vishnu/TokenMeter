@@ -20,6 +20,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _remoteHostController;
+  late final TextEditingController _remoteApiKeyController;
   late final TextEditingController _portController;
 
   @override
@@ -28,6 +29,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final settings = ref.read(settingsServiceProvider);
     _remoteHostController =
         TextEditingController(text: settings.remoteHostUrl ?? '');
+    _remoteApiKeyController =
+        TextEditingController(text: settings.remoteApiKey ?? '');
     _portController =
         TextEditingController(text: settings.apiPort.toString());
   }
@@ -35,8 +38,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void dispose() {
     _remoteHostController.dispose();
+    _remoteApiKeyController.dispose();
     _portController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveRemoteConnection() async {
+    final settings = ref.read(settingsServiceProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    await settings.setRemoteHostUrl(_remoteHostController.text.trim());
+    await settings.setRemoteApiKey(_remoteApiKeyController.text.trim());
+    ref.read(remoteSettingsRevisionProvider.notifier).state++;
+    ref.read(usageRefreshTickProvider.notifier).bump();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Remote connection saved')),
+    );
   }
 
   @override
@@ -59,19 +75,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         const SizedBox(height: 8),
         if (kIsWeb) ...[
+          Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Copy the endpoint URL and API key from Integration on your '
+                'phone (with API server enabled). Both are required.',
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: _remoteHostController,
             decoration: const InputDecoration(
               labelText: 'Remote API host URL',
               hintText: 'http://192.168.1.42:8765',
             ),
-            onSubmitted: (v) => settings.setRemoteHostUrl(v),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _remoteApiKeyController,
+            decoration: const InputDecoration(
+              labelText: 'Remote API key',
+              hintText: 'Paste key from phone Integration screen',
+            ),
+            obscureText: true,
+            autocorrect: false,
+            enableSuggestions: false,
           ),
           const SizedBox(height: 8),
           FilledButton(
-            onPressed: () =>
-                settings.setRemoteHostUrl(_remoteHostController.text),
-            child: const Text('Save remote host'),
+            onPressed: _saveRemoteConnection,
+            child: const Text('Save remote connection'),
           ),
           const SizedBox(height: 16),
         ],

@@ -34,8 +34,8 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             child: const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Web mode: configure a remote API host in Settings to connect '
-                'to a TokenMeter instance running on your phone or desktop.',
+                'Web mode: in Settings, enter the host URL and API key from '
+                'Integration on your phone or desktop (API server enabled).',
               ),
             ),
           ),
@@ -125,7 +125,7 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
           const SizedBox(height: 8),
           _TestConnectionTile(
             endpoint: settings.remoteHostUrl!,
-            apiKey: apiKey,
+            apiKey: settings.remoteApiKey ?? '',
           ),
         ],
         const SizedBox(height: 16),
@@ -309,19 +309,38 @@ class _TestConnectionTileState extends State<_TestConnectionTile> {
     setState(() => _testing = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      if (widget.apiKey.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Add the remote API key in Settings first'),
+          ),
+        );
+        return;
+      }
       final normalized = widget.endpoint.endsWith('/')
           ? widget.endpoint.substring(0, widget.endpoint.length - 1)
           : widget.endpoint;
       final response = await http
-          .get(Uri.parse('$normalized/api/v1/health'))
+          .get(
+            Uri.parse('$normalized/api/v1/stats'),
+            headers: {'Authorization': 'Bearer ${widget.apiKey}'},
+          )
           .timeout(const Duration(seconds: 5));
       if (!mounted) return;
       if (response.statusCode == 200) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Connected ✓'),
+            content: Text('Connected — API key accepted ✓'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
+          ),
+        );
+      } else if (response.statusCode == 403) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Wrong API key — copy the key from your phone Integration screen',
+            ),
           ),
         );
       } else {
@@ -345,7 +364,7 @@ class _TestConnectionTileState extends State<_TestConnectionTile> {
       child: ListTile(
         leading: const Icon(Icons.wifi_tethering),
         title: const Text('Test Connection'),
-        subtitle: const Text('Checks /api/v1/health'),
+        subtitle: const Text('Checks host URL and API key'),
         trailing: _testing
             ? const SizedBox(
                 width: 20, height: 20,
