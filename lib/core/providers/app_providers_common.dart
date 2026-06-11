@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_providers_native.dart'
     if (dart.library.html) 'app_providers_native_stub.dart';
+import '../models/usage_payload.dart';
 import '../models/usage_record.dart';
 import '../services/local_api_server.dart';
 import '../services/network_service.dart';
@@ -160,6 +161,39 @@ class ServerStateNotifier extends StateNotifier<ServerState> {
   }
 }
 
+/// Records usage from inside the app (Chat, Calculator, manual entry),
+/// using the local database on native or the remote API on web.
+final usageRecorderProvider = Provider<UsageRecorder>((ref) {
+  return UsageRecorder(ref);
+});
+
+class UsageRecorder {
+  UsageRecorder(this._ref);
+
+  final Ref _ref;
+
+  bool get canRecord =>
+      _ref.read(usageRepositoryProvider) != null ||
+      _ref.read(remoteApiClientProvider) != null;
+
+  /// Returns the saved record, or null if no storage is available
+  /// (web build without a remote host configured).
+  Future<UsageRecord?> record(UsagePayload payload) async {
+    final repo = _ref.read(usageRepositoryProvider);
+    if (repo != null) {
+      // The repository bumps usageRefreshTickProvider via onUsageRecorded.
+      return repo.recordUsage(payload);
+    }
+    final client = _ref.read(remoteApiClientProvider);
+    if (client != null) {
+      final saved = await client.postUsage(payload);
+      _ref.read(usageRefreshTickProvider.notifier).bump();
+      return saved;
+    }
+    return null;
+  }
+}
+
 final usageRecordsProvider = StreamProvider<List<UsageRecord>>((ref) {
   ref.watch(usageRefreshTickProvider);
   final usage = ref.watch(usageRepositoryProvider);
@@ -176,8 +210,32 @@ final usageRecordsProvider = StreamProvider<List<UsageRecord>>((ref) {
   });
 });
 
-DashboardStats computeDashboardStats(List<UsageRecord> records, Duration period) {
-  final since = DateTime.now().subtract(period);
+/// Calendar-based dashboard periods. "Today" means since midnight,
+/// "This Week" since Monday, "This Month" since the 1st — matching the
+/// budget tracker and the /api/v1/stats endpoint (not rolling windows).
+enum DashboardPeriod { today, week, month }
+
+extension DashboardPeriodLabel on DashboardPeriod {
+  String get label => switch (this) {
+        DashboardPeriod.today => 'Today',
+        DashboardPeriod.week => 'This Week',
+        DashboardPeriod.month => 'This Month',
+      };
+}
+
+/// Returns the calendar start instant for [period] relative to [now].
+DateTime periodStart(DashboardPeriod period, DateTime now) {
+  final startOfDay = DateTime(now.year, now.month, now.day);
+  return switch (period) {
+    DashboardPeriod.today => startOfDay,
+    DashboardPeriod.week => startOfDay.subtract(Duration(days: now.weekday - 1)),
+    DashboardPeriod.month => DateTime(now.year, now.month, 1),
+  };
+}
+
+DashboardStats computeDashboardStats(
+    List<UsageRecord> records, DashboardPeriod period) {
+  final since = periodStart(period, DateTime.now());
   final filtered =
       records.where((r) => !r.createdAt.isBefore(since)).toList();
 
@@ -210,7 +268,7 @@ DashboardStats computeDashboardStats(List<UsageRecord> records, Duration period)
 
 /// Recomputes whenever [usageRecordsProvider] emits new data.
 final dashboardStatsProvider =
-    Provider.family<DashboardStats, Duration>((ref, period) {
+    Provider.family<DashboardStats, DashboardPeriod>((ref, period) {
   final recordsAsync = ref.watch(usageRecordsProvider);
   return recordsAsync.when(
     data: (records) => computeDashboardStats(records, period),
@@ -318,15 +376,15 @@ class TrendPoint {
 }
 
 final trendDataProvider =
-    Provider.family<List<TrendPoint>, Duration>((ref, period) {
+    Provider.family<List<TrendPoint>, DashboardPeriod>((ref, period) {
   final recordsAsync = ref.watch(usageRecordsProvider);
   final records = recordsAsync.valueOrNull ?? [];
   final now = DateTime.now();
 
-  if (period <= const Duration(days: 1)) {
+  if (period == DashboardPeriod.today) {
     // Hourly buckets for Today (0–23)
     final buckets = List.filled(24, 0.0);
-    final start = DateTime(now.year, now.month, now.day);
+    final start = periodStart(period, now);
     for (final r in records) {
       if (!r.createdAt.isBefore(start)) {
         buckets[r.createdAt.hour] += r.costUsd;
@@ -336,56 +394,49 @@ final trendDataProvider =
       24,
       (i) => TrendPoint(label: '${i.toString().padLeft(2, '0')}h', cost: buckets[i], index: i),
     );
-  } else {
-    // Daily buckets
-    final days = period.inDays;
-    final buckets = List.filled(days, 0.0);
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: days - 1));
-    for (final r in records) {
-      if (!r.createdAt.isBefore(start)) {
-        final dayIndex = r.createdAt
-            .difference(start)
-            .inDays
-            .clamp(0, days - 1);
-        buckets[dayIndex] += r.costUsd;
-      }
-    }
-    return List.generate(days, (i) {
-      final d = start.add(Duration(days: i));
-      return TrendPoint(
-        label: '${d.month}/${d.day}',
-        cost: buckets[i],
-        index: i,
-      );
-    });
   }
+
+  // Daily buckets from the calendar start (Monday / 1st) through today.
+  final start = periodStart(period, now);
+  final today = DateTime(now.year, now.month, now.day);
+  final days = today.difference(start).inDays + 1;
+  final buckets = List.filled(days, 0.0);
+  for (final r in records) {
+    if (!r.createdAt.isBefore(start)) {
+      final dayIndex = r.createdAt.difference(start).inDays.clamp(0, days - 1);
+      buckets[dayIndex] += r.costUsd;
+    }
+  }
+  return List.generate(days, (i) {
+    final d = start.add(Duration(days: i));
+    return TrendPoint(label: '${d.month}/${d.day}', cost: buckets[i], index: i);
+  });
 });
 
 // ── Analytics: heatmap ───────────────────────────────────────────────────────
 
 /// Returns a grid [day][hour 0..23] = total cost for the given [period].
-/// For ≤1 day: 1×24 (single row). For longer: up to 30 rows (one per day).
+/// Today: 1×24 (single row). Week/Month: one row per calendar day so far.
 final heatmapDataProvider =
-    Provider.family<List<List<double>>, Duration>((ref, period) {
+    Provider.family<List<List<double>>, DashboardPeriod>((ref, period) {
   final recordsAsync = ref.watch(usageRecordsProvider);
   final records = recordsAsync.valueOrNull ?? [];
   final now = DateTime.now();
 
-  if (period <= const Duration(days: 1)) {
+  if (period == DashboardPeriod.today) {
     final buckets = [List.filled(24, 0.0)];
-    final startOfDay = DateTime(now.year, now.month, now.day);
+    final start = periodStart(period, now);
     for (final r in records) {
-      if (!r.createdAt.isBefore(startOfDay)) {
+      if (!r.createdAt.isBefore(start)) {
         buckets[0][r.createdAt.hour] += r.costUsd;
       }
     }
     return buckets;
   }
 
-  final days = period.inDays.clamp(1, 30);
-  final start = DateTime(now.year, now.month, now.day)
-      .subtract(Duration(days: days - 1));
+  final start = periodStart(period, now);
+  final today = DateTime(now.year, now.month, now.day);
+  final days = (today.difference(start).inDays + 1).clamp(1, 31);
   final grid = List.generate(days, (_) => List.filled(24, 0.0));
   for (final r in records) {
     if (!r.createdAt.isBefore(start)) {

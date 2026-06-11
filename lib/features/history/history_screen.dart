@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/models/usage_payload.dart';
 import '../../core/models/usage_record.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/formatters.dart';
@@ -82,6 +83,122 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 
+  Future<void> _showAddRecordDialog(BuildContext context) async {
+    final pricing = ref.read(pricingRepositoryProvider);
+    final models = pricing.sortedModels;
+    if (models.isEmpty) return;
+
+    String selectedModel = models.first.id;
+    final inputCtrl = TextEditingController();
+    final outputCtrl = TextEditingController();
+    final sourceCtrl = TextEditingController(text: 'manual');
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add usage record'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selectedModel,
+                decoration: const InputDecoration(labelText: 'Model'),
+                items: [
+                  for (final m in models)
+                    DropdownMenuItem(value: m.id, child: Text(m.displayName)),
+                ],
+                onChanged: (v) {
+                  if (v != null) selectedModel = v;
+                },
+              ),
+              TextField(
+                controller: inputCtrl,
+                decoration: const InputDecoration(labelText: 'Input tokens'),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              TextField(
+                controller: outputCtrl,
+                decoration: const InputDecoration(labelText: 'Output tokens'),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              TextField(
+                controller: sourceCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Source',
+                  hintText: 'e.g. chatgpt-web, manual',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final input = int.tryParse(inputCtrl.text);
+    final output = int.tryParse(outputCtrl.text);
+    if (input == null || output == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Enter both token counts.')),
+      );
+      return;
+    }
+
+    final recorder = ref.read(usageRecorderProvider);
+    if (!recorder.canRecord) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No storage available — configure a remote host in Settings.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final source = sourceCtrl.text.trim().isEmpty
+          ? 'manual'
+          : sourceCtrl.text.trim();
+      final saved = await recorder.record(
+        UsagePayload(
+          model: selectedModel,
+          inputTokens: input,
+          outputTokens: output,
+          source: source,
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            saved != null
+                ? 'Record added — ${Formatters.currency(saved.costUsd)}'
+                : 'Could not add the record.',
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not add: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final recordsAsync = ref.watch(usageRecordsProvider);
@@ -114,6 +231,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ),
               const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                tooltip: 'Add record manually',
+                onPressed: () => _showAddRecordDialog(context),
+              ),
               IconButton(
                 icon: const Icon(Icons.download_outlined),
                 tooltip: 'Export as CSV',

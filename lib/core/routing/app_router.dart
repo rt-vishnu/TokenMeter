@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/calculator/calculator_screen.dart';
+import '../../features/chat/chat_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/history/history_screen.dart';
 import '../../features/integration/integration_screen.dart';
@@ -26,6 +27,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/dashboard',
                 builder: (context, state) => const DashboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/chat',
+                builder: (context, state) => const ChatScreen(),
               ),
             ],
           ),

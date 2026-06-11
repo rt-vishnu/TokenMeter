@@ -118,6 +118,51 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
     });
   }
 
+  Future<void> _saveToHistory() async {
+    final modelId = _selectedModel;
+    if (modelId == null || _inputTokens == null || _outputTokens == null) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final recorder = ref.read(usageRecorderProvider);
+
+    if (!recorder.canRecord) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No storage available — configure a remote host in Settings.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final saved = await recorder.record(
+        UsagePayload(
+          model: modelId,
+          inputTokens: _inputTokens!,
+          outputTokens: _outputTokens!,
+          source: 'calculator',
+          metadata: {'estimated_from_text': _useTextEstimate},
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            saved != null
+                ? 'Saved to History — ${Formatters.currency(saved.costUsd)}'
+                : 'Could not save the record.',
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not save: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final models = ref.watch(pricingRepositoryProvider).sortedModels;
@@ -238,6 +283,12 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _saveToHistory,
+                      icon: const Icon(Icons.save_alt),
+                      label: const Text('Save to History'),
+                    ),
                   ],
                 ),
               ),

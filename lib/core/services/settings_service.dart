@@ -21,12 +21,25 @@ class SettingsService {
   static const _dailyBudgetKey = 'daily_budget';
   static const _weeklyBudgetKey = 'weekly_budget';
   static const _monthlyBudgetKey = 'monthly_budget';
+  static const _geminiKeySecureKey = 'gemini_api_key';
+  static const _openaiKeySecureKey = 'openai_api_key';
+  static const _anthropicKeySecureKey = 'anthropic_api_key';
+  static const _ollamaBaseUrlKey = 'ollama_base_url';
+  static const _chatProviderKey = 'chat_provider';
+  static const _chatModelKey = 'chat_model';
 
   // Cached in memory after first load to avoid async on every read.
   String? _cachedApiKey;
+  String? _cachedGeminiKey;
+  String? _cachedOpenaiKey;
+  String? _cachedAnthropicKey;
 
   /// Call once at startup to migrate legacy key and warm the cache.
   Future<void> init() async {
+    _cachedGeminiKey = await _secure.read(key: _geminiKeySecureKey);
+    _cachedOpenaiKey = await _secure.read(key: _openaiKeySecureKey);
+    _cachedAnthropicKey = await _secure.read(key: _anthropicKeySecureKey);
+
     final existing = await _secure.read(key: _apiKeySecureKey);
     if (existing != null) {
       _cachedApiKey = existing;
@@ -115,6 +128,62 @@ class SettingsService {
       await _prefs.setDouble(_monthlyBudgetKey, value);
     }
   }
+
+  // ── Chat provider keys (Gemini / OpenAI / Anthropic) ──────────────────────
+  // Keyed by provider id string to keep this service free of UI-layer enums.
+
+  String? get geminiApiKey => _cachedGeminiKey;
+
+  /// Returns the stored API key for a chat provider id, or null if unset.
+  String? chatApiKey(String providerId) => switch (providerId) {
+        'gemini' => _cachedGeminiKey,
+        'openai' => _cachedOpenaiKey,
+        'anthropic' => _cachedAnthropicKey,
+        _ => null, // ollama and others need no key
+      };
+
+  Future<void> setChatApiKey(String providerId, String? value) async {
+    final secureKey = switch (providerId) {
+      'gemini' => _geminiKeySecureKey,
+      'openai' => _openaiKeySecureKey,
+      'anthropic' => _anthropicKeySecureKey,
+      _ => null,
+    };
+    if (secureKey == null) return;
+
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      await _secure.delete(key: secureKey);
+    } else {
+      await _secure.write(key: secureKey, value: trimmed);
+    }
+    switch (providerId) {
+      case 'gemini':
+        _cachedGeminiKey = trimmed?.isEmpty ?? true ? null : trimmed;
+      case 'openai':
+        _cachedOpenaiKey = trimmed?.isEmpty ?? true ? null : trimmed;
+      case 'anthropic':
+        _cachedAnthropicKey = trimmed?.isEmpty ?? true ? null : trimmed;
+    }
+  }
+
+  String get ollamaBaseUrl =>
+      _prefs.getString(_ollamaBaseUrlKey) ?? 'http://localhost:11434';
+
+  Future<void> setOllamaBaseUrl(String value) =>
+      _prefs.setString(_ollamaBaseUrlKey, value.trim());
+
+  /// Selected chat provider id (gemini/openai/anthropic/ollama).
+  String get chatProvider => _prefs.getString(_chatProviderKey) ?? 'gemini';
+
+  Future<void> setChatProvider(String value) =>
+      _prefs.setString(_chatProviderKey, value);
+
+  String get chatModel =>
+      _prefs.getString(_chatModelKey) ?? 'gemini-2.5-flash-lite';
+
+  Future<void> setChatModel(String value) =>
+      _prefs.setString(_chatModelKey, value);
 
   bool get isWebClientMode {
     final host = remoteHostUrl;

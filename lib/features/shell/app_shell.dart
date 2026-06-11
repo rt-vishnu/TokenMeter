@@ -9,11 +9,12 @@ class AppShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
   static const _destinations = [
-    (icon: Icons.dashboard_outlined, selected: Icons.dashboard, label: 'Dashboard'),
-    (icon: Icons.calculate_outlined, selected: Icons.calculate, label: 'Calculator'),
-    (icon: Icons.history, selected: Icons.history, label: 'History'),
-    (icon: Icons.hub_outlined, selected: Icons.hub, label: 'Integration'),
-    (icon: Icons.settings_outlined, selected: Icons.settings, label: 'Settings'),
+    (icon: Icons.dashboard_outlined, selected: Icons.dashboard, label: 'Dashboard', short: 'Home'),
+    (icon: Icons.chat_bubble_outline, selected: Icons.chat_bubble, label: 'Chat', short: 'Chat'),
+    (icon: Icons.calculate_outlined, selected: Icons.calculate, label: 'Calculator', short: 'Calc'),
+    (icon: Icons.history, selected: Icons.history, label: 'History', short: 'History'),
+    (icon: Icons.hub_outlined, selected: Icons.hub, label: 'Integration', short: 'Connect'),
+    (icon: Icons.settings_outlined, selected: Icons.settings, label: 'Settings', short: 'Settings'),
   ];
 
   @override
@@ -56,7 +57,7 @@ class AppShell extends StatelessWidget {
                   NavigationDestination(
                     icon: Icon(d.icon),
                     selectedIcon: Icon(d.selected),
-                    label: d.label,
+                    label: d.short,
                   ),
               ],
             ),

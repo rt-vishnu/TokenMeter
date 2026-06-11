@@ -18,9 +18,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _periodIndex = 0;
 
   static const _periods = [
-    ('Today', Duration(days: 1)),
-    ('This Week', Duration(days: 7)),
-    ('This Month', Duration(days: 30)),
+    ('Today', DashboardPeriod.today),
+    ('This Week', DashboardPeriod.week),
+    ('This Month', DashboardPeriod.month),
   ];
 
   @override
@@ -698,14 +698,14 @@ class _ActivityHeatmap extends StatelessWidget {
 
   static const _shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  /// Builds row labels: for a 1-row grid (Today) show "Today";
-  /// for multi-row grids use Mon–Sun labels offset to align with today.
+  /// Builds row labels: a 1-row grid (Today) shows "Today"; up to a week
+  /// uses Mon–Sun names; longer (month) uses M/d to avoid repeating weekdays.
   String _rowLabel(int rowIndex, int totalRows) {
     if (totalRows == 1) return 'Today';
-    // For 7-day view: row 0 = oldest day, row (totalRows-1) = today.
-    // Compute weekday of that row.
+    // Row 0 = oldest day, row (totalRows-1) = today.
     final today = DateTime.now();
     final date = today.subtract(Duration(days: totalRows - 1 - rowIndex));
+    if (totalRows > 7) return '${date.month}/${date.day}';
     return _shortDays[date.weekday - 1];
   }
 
