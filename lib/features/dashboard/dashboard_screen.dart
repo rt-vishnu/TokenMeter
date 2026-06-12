@@ -55,7 +55,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             onGoToIntegration: () => context.go('/integration'),
           )
         else ...[
-          _SummaryCards(stats: stats),
+          _SummaryCards(
+            stats: stats,
+            periodLabel: _periods[_periodIndex].$1,
+            streak: ref.watch(trackingStreakProvider),
+          ),
           const SizedBox(height: 12),
           _BudgetProgressBars(budget: budget),
           const SizedBox(height: 16),
@@ -256,35 +260,108 @@ class _BudgetProgressBars extends StatelessWidget {
 // ── Summary cards ─────────────────────────────────────────────────────────────
 
 class _SummaryCards extends StatelessWidget {
-  const _SummaryCards({required this.stats});
+  const _SummaryCards({
+    required this.stats,
+    required this.periodLabel,
+    required this.streak,
+  });
   final DashboardStats stats;
+  final String periodLabel;
+  final int streak;
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning 👋';
+    if (hour < 17) return 'Good afternoon 👋';
+    return 'Good evening 👋';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: _StatCard(
-            label: 'Total Cost',
-            value: Formatters.compactCurrency(stats.totalCost),
-            icon: Icons.attach_money,
+        // Hero spend card with a soft gradient.
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                scheme.primary,
+                Color.lerp(scheme.primary, scheme.tertiary, 0.6)!,
+              ],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _greeting,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: scheme.onPrimary.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  if (streak > 0) _StreakChip(streak: streak),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Count-up animation: animates from the previously shown value
+              // to the new total whenever the period or data changes.
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: stats.totalCost),
+                duration: const Duration(milliseconds: 700),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) => Text(
+                  Formatters.compactCurrency(value),
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 36,
+                      ),
+                ),
+              ),
+              Text(
+                'spent — $periodLabel',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onPrimary.withValues(alpha: 0.85),
+                    ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            label: 'Total Tokens',
-            value: Formatters.tokens(stats.totalTokens),
-            icon: Icons.token,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            label: 'Requests',
-            value: '${stats.recordCount}',
-            icon: Icons.swap_horiz,
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                label: 'Tokens',
+                value: Formatters.tokens(stats.totalTokens),
+                icon: Icons.token_outlined,
+                tint: scheme.tertiaryContainer,
+                iconColor: scheme.onTertiaryContainer,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatCard(
+                label: 'Requests',
+                value: '${stats.recordCount}',
+                icon: Icons.bolt_outlined,
+                tint: scheme.secondaryContainer,
+                iconColor: scheme.onSecondaryContainer,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -296,28 +373,85 @@ class _StatCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    required this.tint,
+    required this.iconColor,
   });
 
   final String label;
   final String value;
   final IconData icon;
+  final Color tint;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: tint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 22, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StreakChip extends StatelessWidget {
+  const _StreakChip({required this.streak});
+  final int streak;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.6, end: 1),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.elasticOut,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.onPrimary.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🔥', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 4),
             Text(
-              value,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+              '$streak day${streak == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onPrimary,
+                    fontWeight: FontWeight.w800,
                   ),
             ),
           ],
@@ -838,43 +972,48 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final isFiltered = periodLabel != null;
     final title = isFiltered
-        ? 'No usage recorded — $periodLabel'
-        : 'No usage recorded yet';
+        ? 'All quiet — $periodLabel ✨'
+        : 'Let\'s get you set up! 🚀';
     final subtitle = isFiltered
-        ? 'No token usage was recorded in this period.\nSwitch period or connect your AI tools.'
-        : 'Enable the API server and connect your AI tools\nto start tracking token costs.';
+        ? 'Nothing spent in this period.\nSwitch period, or fire off a message in Chat.'
+        : 'Chat with an AI right here, or connect your\ncoding tools — costs appear instantly.';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(
-            Icons.bar_chart_rounded,
-            size: 72,
-            color: Theme.of(context)
-                .colorScheme
-                .onSurfaceVariant
-                .withValues(alpha: 0.3),
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isFiltered ? Icons.spa_outlined : Icons.rocket_launch_outlined,
+              size: 44,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           if (!isFiltered)
             FilledButton.icon(
               onPressed: onGoToIntegration,
               icon: const Icon(Icons.cable),
-              label: const Text('Go to Integration'),
+              label: const Text('Connect your tools'),
             ),
         ],
       ),
