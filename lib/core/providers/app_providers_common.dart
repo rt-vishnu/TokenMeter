@@ -282,6 +282,34 @@ final dashboardStatsProvider =
   );
 });
 
+/// Number of consecutive calendar days (ending today, or yesterday if today
+/// has no activity yet) that have at least one usage record. Drives the
+/// "tracking streak" chip — the day stays alive until midnight.
+final trackingStreakProvider = Provider<int>((ref) {
+  final records = ref.watch(usageRecordsProvider).valueOrNull ?? [];
+  if (records.isEmpty) return 0;
+
+  final days = <DateTime>{
+    for (final r in records)
+      DateTime(r.createdAt.year, r.createdAt.month, r.createdAt.day),
+  };
+
+  final now = DateTime.now();
+  var cursor = DateTime(now.year, now.month, now.day);
+  if (!days.contains(cursor)) {
+    // Today has no activity yet — the streak can still be intact via yesterday.
+    cursor = cursor.subtract(const Duration(days: 1));
+    if (!days.contains(cursor)) return 0;
+  }
+
+  var streak = 0;
+  while (days.contains(cursor)) {
+    streak++;
+    cursor = cursor.subtract(const Duration(days: 1));
+  }
+  return streak;
+});
+
 class DashboardStats {
   const DashboardStats({
     this.totalCost = 0,

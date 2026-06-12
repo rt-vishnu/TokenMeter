@@ -41,6 +41,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final List<_ChatMessage> _messages = [];
   bool _sending = false;
   double _sessionCost = 0;
+  // Partial assistant reply while a streamed response is in flight.
+  String _streamingText = '';
 
   @override
   void dispose() {
@@ -57,6 +59,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
         );
+      }
+    });
+  }
+
+  /// Instant scroll used while deltas stream in (animations would queue up).
+  void _jumpToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
   }
@@ -104,7 +115,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
 
     try {
-      final reply = await client.complete(model: model, history: history);
+      final reply = await client.complete(
+        model: model,
+        history: history,
+        onDelta: (delta) {
+          if (!mounted) return;
+          setState(() => _streamingText += delta);
+          _jumpToBottom();
+        },
+      );
 
       final cost = CostCalculator.calculateCost(
         pricing.getModelOrDefault(model),
@@ -135,12 +154,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           cost: cost,
         ));
         _sessionCost += cost;
+        _streamingText = '';
         _sending = false;
       });
     } on LlmException catch (e) {
       if (!mounted) return;
       setState(() {
         _messages.add(_ChatMessage(isUser: false, text: e.message, isError: true));
+        _streamingText = '';
         _sending = false;
       });
     } catch (e) {
@@ -151,6 +172,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           text: 'Something went wrong: $e',
           isError: true,
         ));
+        _streamingText = '';
         _sending = false;
       });
     }
@@ -223,7 +245,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       itemCount: _messages.length + (_sending ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _messages.length) {
-                          return const _TypingIndicator();
+                          // Streamed text appears live; spinner until the
+                          // first delta arrives.
+                          return _streamingText.isEmpty
+                              ? const _TypingIndicator()
+                              : _MessageBubble(
+                                  message: _ChatMessage(
+                                    isUser: false,
+                                    text: _streamingText,
+                                  ),
+                                );
                         }
                         return _MessageBubble(message: _messages[index]);
                       },
@@ -238,10 +269,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   Expanded(
                     child: TextField(
                       controller: _inputController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Ask anything…',
                         isDense: true,
-                        border: OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
                       ),
                       minLines: 1,
                       maxLines: 5,
@@ -251,7 +299,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    icon: const Icon(Icons.send),
+                    iconSize: 22,
+                    style: IconButton.styleFrom(
+                      padding: const EdgeInsets.all(14),
+                    ),
+                    icon: const Icon(Icons.arrow_upward_rounded),
                     onPressed: _sending ? null : _send,
                   ),
                 ],
@@ -425,17 +477,25 @@ class _MessageBubble extends StatelessWidget {
             ? scheme.primaryContainer
             : scheme.surfaceContainerHighest;
 
+    // Speech-bubble feel: round everywhere except the sender's corner.
+    final radius = BorderRadius.only(
+      topLeft: const Radius.circular(20),
+      topRight: const Radius.circular(20),
+      bottomLeft: Radius.circular(message.isUser ? 20 : 6),
+      bottomRight: Radius.circular(message.isUser ? 6 : 20),
+    );
+
     return Align(
       alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.sizeOf(context).width * 0.8,
         ),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: radius,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
