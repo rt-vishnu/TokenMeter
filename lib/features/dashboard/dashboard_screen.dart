@@ -61,6 +61,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             streak: ref.watch(trackingStreakProvider),
           ),
           const SizedBox(height: 12),
+          _WeeklyRecapCard(recap: ref.watch(weeklyRecapProvider)),
           _BudgetProgressBars(budget: budget),
           const SizedBox(height: 16),
           Text('Cost Trend — ${_periods[_periodIndex].$1}',
@@ -184,7 +185,80 @@ class _BudgetAlertBanners extends StatelessWidget {
   }
 }
 
-// ── Budget progress bars ──────────────────────────────────────────────────────
+// ── Weekly recap card ─────────────────────────────────────────────────────────
+
+class _WeeklyRecapCard extends StatelessWidget {
+  const _WeeklyRecapCard({required this.recap});
+  final WeeklyRecap recap;
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing meaningful to recap until there's some spend either week.
+    if (recap.thisWeek <= 0 && recap.lastWeek <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    final pct = recap.percentChange;
+
+    final String emoji;
+    final String headline;
+    final Color tint;
+    if (!recap.hasComparison) {
+      emoji = '📊';
+      headline = 'Your first week of tracking — nice start!';
+      tint = scheme.secondaryContainer;
+    } else if (recap.isDown) {
+      emoji = '📉';
+      headline =
+          '${pct!.abs().toStringAsFixed(0)}% less than last week — great job!';
+      tint = scheme.primaryContainer;
+    } else if (pct! > 0) {
+      emoji = '📈';
+      headline = '${pct.toStringAsFixed(0)}% more than last week';
+      tint = const Color(0xFFFFF3CD);
+    } else {
+      emoji = '➖';
+      headline = 'About the same as last week';
+      tint = scheme.secondaryContainer;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        color: tint,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 30)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('This week',
+                        style: Theme.of(context).textTheme.labelMedium),
+                    Text(
+                      Formatters.compactCurrency(recap.thisWeek),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    Text(headline,
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Budget goals (gamified) ─────────────────────────────────────────────────
 
 class _BudgetProgressBars extends StatelessWidget {
   const _BudgetProgressBars({required this.budget});
@@ -192,66 +266,142 @@ class _BudgetProgressBars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    void addBar(String label, double spend, double? limit) {
-      if (limit == null || limit <= 0) return;
-      final ratio = (spend / limit).clamp(0.0, 1.0);
-      final Color barColor;
-      if (ratio >= 1.0) {
-        barColor = Theme.of(context).colorScheme.error;
-      } else if (ratio >= 0.8) {
-        barColor = Colors.amber.shade700;
-      } else {
-        barColor = Colors.green.shade600;
-      }
-      rows.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.bodySmall),
-                Text(
-                  '${Formatters.compactCurrency(spend)} / ${Formatters.compactCurrency(limit)}',
-                  style: Theme.of(context).textTheme.bodySmall,
+    final goals = <({String label, double spend, double limit, AlertLevel level})>[
+      if (budget.dailyBudget != null && budget.dailyBudget! > 0)
+        (label: 'Today', spend: budget.dailySpend, limit: budget.dailyBudget!, level: budget.dailyLevel),
+      if (budget.weeklyBudget != null && budget.weeklyBudget! > 0)
+        (label: 'This week', spend: budget.weeklySpend, limit: budget.weeklyBudget!, level: budget.weeklyLevel),
+      if (budget.monthlyBudget != null && budget.monthlyBudget! > 0)
+        (label: 'This month', spend: budget.monthlySpend, limit: budget.monthlyBudget!, level: budget.monthlyLevel),
+    ];
+
+    // No budgets set — gentle nudge to create the goal (engagement hook).
+    if (goals.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Card(
+          child: ListTile(
+            leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+            title: const Text('Set a budget goal'),
+            subtitle: const Text('Track spending against a daily or monthly limit.'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings'),
+          ),
+        ),
+      );
+    }
+
+    final worst = goals
+        .map((g) => g.level)
+        .reduce((a, b) => a.index >= b.index ? a : b);
+    final (String chipEmoji, String chipText, Color chipColor) = switch (worst) {
+      AlertLevel.ok => ('🎯', 'On track', Colors.green.shade600),
+      AlertLevel.warning => ('⚠️', 'Getting close', Colors.amber.shade700),
+      AlertLevel.exceeded => ('🚨', 'Over budget', Theme.of(context).colorScheme.error),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('Budget Goals',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: chipColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$chipEmoji $chipText',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: chipColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              for (final g in goals)
+                _BudgetGoalRow(
+                  label: g.label,
+                  spend: g.spend,
+                  limit: g.limit,
+                  level: g.level,
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: ratio,
-                minHeight: 8,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BudgetGoalRow extends StatelessWidget {
+  const _BudgetGoalRow({
+    required this.label,
+    required this.spend,
+    required this.limit,
+    required this.level,
+  });
+
+  final String label;
+  final double spend;
+  final double limit;
+  final AlertLevel level;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = (spend / limit).clamp(0.0, 1.0);
+    final (Color barColor, String status) = switch (level) {
+      AlertLevel.ok => (Colors.green.shade600, '✅'),
+      AlertLevel.warning => (Colors.amber.shade700, '⚠️'),
+      AlertLevel.exceeded => (Theme.of(context).colorScheme.error, '🚨'),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('$status  $label',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      )),
+              const Spacer(),
+              Text(
+                '${Formatters.compactCurrency(spend)} / ${Formatters.compactCurrency(limit)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: ratio),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
+                minHeight: 10,
                 backgroundColor:
                     Theme.of(context).colorScheme.surfaceContainerHighest,
                 valueColor: AlwaysStoppedAnimation<Color>(barColor),
               ),
             ),
-          ],
-        ),
-      ));
-    }
-
-    addBar('Daily', budget.dailySpend, budget.dailyBudget);
-    addBar('Weekly', budget.weeklySpend, budget.weeklyBudget);
-    addBar('Monthly', budget.monthlySpend, budget.monthlyBudget);
-
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Budget',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 12),
-            ...rows,
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

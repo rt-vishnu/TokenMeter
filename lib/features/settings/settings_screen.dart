@@ -469,18 +469,20 @@ class _DivergenceChip extends StatelessWidget {
   }
 }
 
-class _BudgetControlsCard extends StatefulWidget {
+class _BudgetControlsCard extends ConsumerStatefulWidget {
   const _BudgetControlsCard({required this.settings});
   final SettingsService settings;
 
   @override
-  State<_BudgetControlsCard> createState() => _BudgetControlsCardState();
+  ConsumerState<_BudgetControlsCard> createState() =>
+      _BudgetControlsCardState();
 }
 
-class _BudgetControlsCardState extends State<_BudgetControlsCard> {
+class _BudgetControlsCardState extends ConsumerState<_BudgetControlsCard> {
   late final TextEditingController _dailyCtrl;
   late final TextEditingController _weeklyCtrl;
   late final TextEditingController _monthlyCtrl;
+  late bool _alertsEnabled;
 
   @override
   void initState() {
@@ -491,6 +493,28 @@ class _BudgetControlsCardState extends State<_BudgetControlsCard> {
         text: widget.settings.weeklyBudget?.toStringAsFixed(2) ?? '');
     _monthlyCtrl = TextEditingController(
         text: widget.settings.monthlyBudget?.toStringAsFixed(2) ?? '');
+    _alertsEnabled = widget.settings.budgetAlertsEnabled;
+  }
+
+  Future<void> _toggleAlerts(bool value) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final notif = ref.read(notificationServiceProvider);
+    if (value) {
+      final granted = await notif.requestPermissions();
+      if (!granted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Notification permission denied. Enable it in system '
+              'settings to receive budget alerts.',
+            ),
+          ),
+        );
+        return; // leave the toggle off
+      }
+    }
+    await widget.settings.setBudgetAlertsEnabled(value);
+    if (mounted) setState(() => _alertsEnabled = value);
   }
 
   @override
@@ -509,6 +533,7 @@ class _BudgetControlsCardState extends State<_BudgetControlsCard> {
     final messenger = ScaffoldMessenger.of(context);
     if (raw.trim().isEmpty) {
       await setter(null);
+      _refreshBudgetDependents();
       messenger.showSnackBar(const SnackBar(content: Text('Budget cleared')));
       return;
     }
@@ -520,7 +545,15 @@ class _BudgetControlsCardState extends State<_BudgetControlsCard> {
       return;
     }
     await setter(value);
+    _refreshBudgetDependents();
     messenger.showSnackBar(const SnackBar(content: Text('Budget saved')));
+  }
+
+  /// Budgets live in the [SettingsService] singleton, which Riverpod can't
+  /// observe for mutations — so nudge the providers that read them to recompute
+  /// with the new values without needing an app restart.
+  void _refreshBudgetDependents() {
+    ref.invalidate(budgetStatusProvider);
   }
 
   @override
@@ -561,6 +594,24 @@ class _BudgetControlsCardState extends State<_BudgetControlsCard> {
               onSave: (v) =>
                   _save(context, v, widget.settings.setMonthlyBudget),
             ),
+            const Divider(height: 28),
+            if (ref.read(notificationServiceProvider).supported)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Budget alert notifications'),
+                subtitle: const Text(
+                    'Get notified at 80% and 100% of a budget.'),
+                value: _alertsEnabled,
+                onChanged: _toggleAlerts,
+              )
+            else
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.notifications_off_outlined),
+                title: const Text('Budget alert notifications'),
+                subtitle: const Text('Available on Android & iOS.'),
+                enabled: false,
+              ),
           ],
         ),
       ),

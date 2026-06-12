@@ -38,6 +38,15 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.anthropic => 'https://console.anthropic.com/settings/keys',
       };
 
+  /// Whether a user-added custom model id belongs to this provider, so custom
+  /// models surface under the right provider in the picker.
+  bool ownsCustomModel(String id) => switch (this) {
+        LlmProvider.gemini => id.startsWith('gemini'),
+        LlmProvider.openai =>
+          id.startsWith('gpt') || RegExp(r'^o\d').hasMatch(id),
+        LlmProvider.anthropic => id.startsWith('claude'),
+      };
+
   String get id => name;
 }
 

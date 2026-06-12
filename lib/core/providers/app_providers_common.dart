@@ -8,9 +8,11 @@ import '../models/usage_payload.dart';
 import '../models/usage_record.dart';
 import '../services/local_api_server.dart';
 import '../services/network_service.dart';
+import '../services/notification_service.dart';
 import '../services/pricing_repository.dart';
 import '../services/remote_api_client.dart';
 import '../services/settings_service.dart';
+import '../utils/formatters.dart';
 
 final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('SharedPreferences must be overridden');
@@ -30,6 +32,70 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 final pricingRepositoryProvider = Provider<PricingRepository>((ref) {
   throw UnimplementedError('PricingRepository must be initialized');
 });
+
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  throw UnimplementedError('NotificationService must be initialized');
+});
+
+/// Evaluates budget thresholds and fires a local notification once per
+/// threshold per period window. Driven by listening to [budgetStatusProvider].
+final budgetAlertServiceProvider = Provider<BudgetAlertService>((ref) {
+  return BudgetAlertService(ref);
+});
+
+class BudgetAlertService {
+  BudgetAlertService(this._ref);
+
+  final Ref _ref;
+
+  Future<void> evaluate(BudgetStatus status) async {
+    final settings = _ref.read(settingsServiceProvider);
+    if (!settings.budgetAlertsEnabled) return;
+
+    final notif = _ref.read(notificationServiceProvider);
+    if (!notif.supported) return;
+
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final startOfWeek = startOfDay.subtract(Duration(days: now.weekday - 1));
+
+    Future<void> check(
+      String name,
+      int id,
+      double spend,
+      double? budget,
+      AlertLevel level,
+      String periodId,
+    ) async {
+      if (budget == null || budget <= 0 || level == AlertLevel.ok) return;
+      final key = '${name}_$periodId';
+      if (level.index <= settings.budgetNotifyLevel(key)) return;
+
+      final exceeded = level == AlertLevel.exceeded;
+      await notif.show(
+        id: id,
+        title: exceeded ? '$name budget exceeded 🚨' : '$name budget at 80% ⚠️',
+        body: exceeded
+            ? 'You\'ve spent ${Formatters.compactCurrency(spend)} of your '
+                '${Formatters.compactCurrency(budget)} $name budget.'
+            : 'You\'re at ${Formatters.compactCurrency(spend)} of '
+                '${Formatters.compactCurrency(budget)} ($name budget).',
+      );
+      await settings.setBudgetNotifyLevel(key, level.index);
+    }
+
+    final dayId = startOfDay.toIso8601String().split('T').first;
+    final weekId = startOfWeek.toIso8601String().split('T').first;
+    final monthId = '${now.year}-${now.month}';
+
+    await check('Daily', 1, status.dailySpend, status.dailyBudget,
+        status.dailyLevel, dayId);
+    await check('Weekly', 2, status.weeklySpend, status.weeklyBudget,
+        status.weeklyLevel, weekId);
+    await check('Monthly', 3, status.monthlySpend, status.monthlyBudget,
+        status.monthlyLevel, monthId);
+  }
+}
 
 final remoteSettingsRevisionProvider = StateProvider<int>((ref) => 0);
 
@@ -397,6 +463,43 @@ final budgetStatusProvider = Provider<BudgetStatus>((ref) {
     weeklyBudget: settings.weeklyBudget,
     monthlyBudget: settings.monthlyBudget,
   );
+});
+
+// ── Weekly recap ──────────────────────────────────────────────────────────────
+
+class WeeklyRecap {
+  const WeeklyRecap({required this.thisWeek, required this.lastWeek});
+
+  final double thisWeek;
+  final double lastWeek;
+
+  bool get hasComparison => lastWeek > 0;
+
+  /// Signed percent change vs last week (negative = spending went down).
+  double? get percentChange =>
+      lastWeek > 0 ? (thisWeek - lastWeek) / lastWeek * 100 : null;
+
+  bool get isDown => (percentChange ?? 0) < 0;
+}
+
+/// This calendar week's spend (since Monday) vs the previous week's.
+final weeklyRecapProvider = Provider<WeeklyRecap>((ref) {
+  final records = ref.watch(usageRecordsProvider).valueOrNull ?? [];
+  final now = DateTime.now();
+  final startOfDay = DateTime(now.year, now.month, now.day);
+  final startOfWeek = startOfDay.subtract(Duration(days: now.weekday - 1));
+  final startOfLastWeek = startOfWeek.subtract(const Duration(days: 7));
+
+  double thisWeek = 0;
+  double lastWeek = 0;
+  for (final r in records) {
+    if (!r.createdAt.isBefore(startOfWeek)) {
+      thisWeek += r.costUsd;
+    } else if (!r.createdAt.isBefore(startOfLastWeek)) {
+      lastWeek += r.costUsd;
+    }
+  }
+  return WeeklyRecap(thisWeek: thisWeek, lastWeek: lastWeek);
 });
 
 // ── Analytics: daily trend ───────────────────────────────────────────────────

@@ -183,6 +183,22 @@ class SettingsService {
     }
   }
 
+  // ── Budget alert notifications ────────────────────────────────────────────
+
+  static const _budgetAlertsKey = 'budget_alerts_enabled';
+
+  bool get budgetAlertsEnabled => _prefs.getBool(_budgetAlertsKey) ?? false;
+
+  Future<void> setBudgetAlertsEnabled(bool value) =>
+      _prefs.setBool(_budgetAlertsKey, value);
+
+  /// Highest alert level already notified for a period window (de-dup state).
+  /// 0 = none, 1 = warning, 2 = exceeded.
+  int budgetNotifyLevel(String key) => _prefs.getInt('notif_$key') ?? 0;
+
+  Future<void> setBudgetNotifyLevel(String key, int level) =>
+      _prefs.setInt('notif_$key', level);
+
   /// Selected chat provider id (gemini/openai/anthropic).
   String get chatProvider => _prefs.getString(_chatProviderKey) ?? 'gemini';
 
