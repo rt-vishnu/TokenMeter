@@ -6,6 +6,7 @@ class ModelPricing {
     required this.inputPer1M,
     required this.outputPer1M,
     this.isCustom = false,
+    this.deprecated = false,
   });
 
   final String id;
@@ -15,6 +16,10 @@ class ModelPricing {
   final double outputPer1M;
   final bool isCustom;
 
+  /// Retired by the provider — kept for costing historical records, but
+  /// hidden from model pickers so users can't select it.
+  final bool deprecated;
+
   factory ModelPricing.fromJson(String id, Map<String, dynamic> json) {
     return ModelPricing(
       id: id,
@@ -23,6 +28,7 @@ class ModelPricing {
       inputPer1M: (json['input_per_1m'] as num).toDouble(),
       outputPer1M: (json['output_per_1m'] as num).toDouble(),
       isCustom: json['is_custom'] as bool? ?? false,
+      deprecated: json['deprecated'] as bool? ?? false,
     );
   }
 
@@ -32,6 +38,7 @@ class ModelPricing {
         'input_per_1m': inputPer1M,
         'output_per_1m': outputPer1M,
         'is_custom': isCustom,
+        if (deprecated) 'deprecated': true,
       };
 
   ModelPricing copyWith({
@@ -41,6 +48,7 @@ class ModelPricing {
     double? inputPer1M,
     double? outputPer1M,
     bool? isCustom,
+    bool? deprecated,
   }) {
     return ModelPricing(
       id: id ?? this.id,
@@ -49,6 +57,7 @@ class ModelPricing {
       inputPer1M: inputPer1M ?? this.inputPer1M,
       outputPer1M: outputPer1M ?? this.outputPer1M,
       isCustom: isCustom ?? this.isCustom,
+      deprecated: deprecated ?? this.deprecated,
     );
   }
 }

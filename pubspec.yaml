@@ -31,6 +31,8 @@ dependencies:
   google_fonts: ^6.2.1
   open_file: ^3.5.11
   url_launcher: ^6.3.2
+  flutter_local_notifications: ^22.0.0
+  flutter_markdown_plus: ^1.0.7
 
 dev_dependencies:
   flutter_test:

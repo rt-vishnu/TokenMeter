@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -72,10 +73,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  /// Models available for [provider], taken from the pricing data.
+  /// Selectable models for [provider]: every non-deprecated model that belongs
+  /// to this provider (by pricing `provider`, or a custom model whose id is
+  /// owned by it). Models flagged `deprecated` in the pricing data are hidden.
   List<String> _modelsFor(LlmProvider provider, PricingRepository pricing) {
     return pricing.sortedModels
-        .where((m) => m.provider == provider.pricingProvider)
+        .where((m) =>
+            !m.deprecated &&
+            (m.provider == provider.pricingProvider ||
+                (m.isCustom && provider.ownsCustomModel(m.id))))
         .map((m) => m.id)
         .toList();
   }
@@ -500,7 +506,11 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SelectableText(message.text),
+            // Assistant replies are markdown; user/error text stays plain.
+            if (message.isUser || message.isError)
+              SelectableText(message.text)
+            else
+              _MarkdownReply(text: message.text),
             if (message.cost != null) ...[
               const SizedBox(height: 6),
               Text(
@@ -514,6 +524,56 @@ class _MessageBubble extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Renders an assistant reply as markdown (bold, headings, lists, code),
+/// styled to sit naturally inside the chat bubble.
+class _MarkdownReply extends StatelessWidget {
+  const _MarkdownReply({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.textTheme.bodyMedium!;
+    final codeBg = theme.colorScheme.surfaceContainerHighest;
+
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      onTapLink: (text, href, title) {
+        if (href != null) {
+          launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+        }
+      },
+      styleSheet: MarkdownStyleSheet(
+        p: base,
+        // Headings shrink to bubble-friendly sizes (no giant h1/h2).
+        h1: base.copyWith(fontSize: 19, fontWeight: FontWeight.w800),
+        h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w800),
+        h3: base.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
+        listBullet: base,
+        strong: base.copyWith(fontWeight: FontWeight.w800),
+        em: base.copyWith(fontStyle: FontStyle.italic),
+        code: base.copyWith(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          backgroundColor: codeBg,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: codeBg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        codeblockPadding: const EdgeInsets.all(12),
+        blockquoteDecoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        blockSpacing: 10,
+        pPadding: EdgeInsets.zero,
       ),
     );
   }

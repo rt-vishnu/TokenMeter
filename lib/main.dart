@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/providers/app_providers.dart';
+import 'core/providers/app_providers_common.dart';
+import 'core/services/notification_service.dart';
 import 'core/services/pricing_repository.dart';
 import 'core/services/settings_service.dart';
 
@@ -21,12 +23,16 @@ Future<void> main() async {
   final settings = SettingsService(prefs, secure);
   await settings.init();
 
+  final notifications = NotificationService();
+  await notifications.init();
+
   runApp(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         pricingRepositoryProvider.overrideWithValue(pricing),
         settingsServiceProvider.overrideWithValue(settings),
+        notificationServiceProvider.overrideWithValue(notifications),
       ],
       child: const _AppBootstrap(),
     ),
@@ -66,6 +72,10 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap>
 
   @override
   Widget build(BuildContext context) {
+    // Fire budget notifications whenever the computed spend/limits change.
+    ref.listen<BudgetStatus>(budgetStatusProvider, (_, next) {
+      ref.read(budgetAlertServiceProvider).evaluate(next);
+    });
     return const TokenMeterApp();
   }
 }
