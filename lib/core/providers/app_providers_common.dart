@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,7 @@ import 'app_providers_native.dart'
     if (dart.library.html) 'app_providers_native_stub.dart';
 import '../models/usage_payload.dart';
 import '../models/usage_record.dart';
+import '../services/billing_client.dart';
 import '../services/local_api_server.dart';
 import '../services/network_service.dart';
 import '../services/notification_service.dart';
@@ -35,6 +38,71 @@ final pricingRepositoryProvider = Provider<PricingRepository>((ref) {
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   throw UnimplementedError('NotificationService must be initialized');
+});
+
+/// This calendar month's tracked (estimated) spend grouped by pricing
+/// `provider` — used for the Balances "Tracked vs Actual" comparison.
+final trackedMonthCostByProviderProvider = Provider<Map<String, double>>((ref) {
+  final records = ref.watch(usageRecordsProvider).valueOrNull ?? [];
+  final pricing = ref.watch(pricingRepositoryProvider);
+  final now = DateTime.now();
+  final startOfMonth = DateTime(now.year, now.month, 1);
+
+  final map = <String, double>{};
+  for (final r in records) {
+    if (r.createdAt.isBefore(startOfMonth)) continue;
+    final provider = pricing.getModel(r.model)?.provider ?? 'unknown';
+    map[provider] = (map[provider] ?? 0) + r.costUsd;
+  }
+  return map;
+});
+
+/// Pulls actual spend/balance from a provider's billing API. Returns a
+/// [ProviderActuals] with a status the UI renders (connected/notConnected/
+/// unsupported/error).
+///
+/// Skip-refetch guard: if a successful fetch is cached and younger than 1 hour,
+/// returns the cached value immediately. Clear the cache
+/// (`settings.setBillingActualsCacheRaw(id, null)`) before invalidating to
+/// force a real network call (e.g. on manual refresh / key change).
+final providerActualsProvider =
+    FutureProvider.family<ProviderActuals, BillingProvider>((ref, provider) async {
+  // Gemini has no public billing API — always unsupported, no key needed.
+  if (provider == BillingProvider.gemini) {
+    return ProviderActuals.unsupported(provider);
+  }
+
+  final settings = ref.watch(settingsServiceProvider);
+  final key = settings.billingApiKey(provider.id);
+  if (key == null || key.isEmpty) {
+    return ProviderActuals.notConnected(provider);
+  }
+
+  // Skip-refetch guard: serve cache if it's younger than 1 hour.
+  final raw = settings.billingActualsCacheRaw(provider.id);
+  if (raw != null) {
+    try {
+      final cached = ProviderActuals.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>);
+      if (cached.lastSynced != null &&
+          DateTime.now().difference(cached.lastSynced!) <
+              const Duration(hours: 1)) {
+        return cached;
+      }
+    } catch (_) {
+      // Corrupt cache — fall through to a live fetch.
+    }
+  }
+
+  final actuals = await BillingClient.forProvider(provider, apiKey: key).fetch();
+
+  // Persist successful fetches so the last-known values survive a restart.
+  if (actuals.status == BillingStatus.connected) {
+    await settings.setBillingActualsCacheRaw(
+        provider.id, jsonEncode(actuals.toJson()));
+  }
+
+  return actuals;
 });
 
 /// Evaluates budget thresholds and fires a local notification once per

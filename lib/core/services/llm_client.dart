@@ -8,7 +8,9 @@ import 'package:http/http.dart' as http;
 enum LlmProvider {
   gemini,
   openai,
-  anthropic;
+  anthropic,
+  nvidia,
+  kimi;
 
   static LlmProvider fromId(String? id) => LlmProvider.values.firstWhere(
         (p) => p.name == id,
@@ -21,6 +23,8 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.gemini => 'Google Gemini',
         LlmProvider.openai => 'OpenAI',
         LlmProvider.anthropic => 'Anthropic Claude',
+        LlmProvider.nvidia => 'NVIDIA NIM',
+        LlmProvider.kimi => 'Kimi (Moonshot AI)',
       };
 
   /// The `provider` value used in the bundled pricing data, so the model
@@ -29,6 +33,8 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.gemini => 'google',
         LlmProvider.openai => 'openai',
         LlmProvider.anthropic => 'anthropic',
+        LlmProvider.nvidia => 'nvidia',
+        LlmProvider.kimi => 'moonshot',
       };
 
   /// Where the user gets an API key.
@@ -36,6 +42,8 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.gemini => 'https://aistudio.google.com/apikey',
         LlmProvider.openai => 'https://platform.openai.com/api-keys',
         LlmProvider.anthropic => 'https://console.anthropic.com/settings/keys',
+        LlmProvider.nvidia => 'https://build.nvidia.com',
+        LlmProvider.kimi => 'https://platform.moonshot.cn',
       };
 
   /// Whether a user-added custom model id belongs to this provider, so custom
@@ -45,6 +53,9 @@ extension LlmProviderInfo on LlmProvider {
         LlmProvider.openai =>
           id.startsWith('gpt') || RegExp(r'^o\d').hasMatch(id),
         LlmProvider.anthropic => id.startsWith('claude'),
+        LlmProvider.nvidia =>
+          id.startsWith('nvidia/') || id.startsWith('nemotron'),
+        LlmProvider.kimi => id.startsWith('kimi-') || id.startsWith('moonshot-'),
       };
 
   String get id => name;
@@ -92,9 +103,16 @@ abstract class LlmClient {
       case LlmProvider.gemini:
         return _GeminiClient(apiKey);
       case LlmProvider.openai:
-        return _OpenAiClient(apiKey);
+        return _OpenAiCompatClient(apiKey,
+            Uri.parse('https://api.openai.com/v1/chat/completions'));
       case LlmProvider.anthropic:
         return _AnthropicClient(apiKey);
+      case LlmProvider.nvidia:
+        return _OpenAiCompatClient(apiKey,
+            Uri.parse('https://integrate.api.nvidia.com/v1/chat/completions'));
+      case LlmProvider.kimi:
+        return _OpenAiCompatClient(apiKey,
+            Uri.parse('https://api.moonshot.cn/v1/chat/completions'));
     }
   }
 }
@@ -286,16 +304,17 @@ class _GeminiClient implements LlmClient {
   }
 }
 
-// ── OpenAI ──────────────────────────────────────────────────────────────────
+// ── OpenAI-compatible (OpenAI, NVIDIA NIM, Kimi/Moonshot) ────────────────────
 
-class _OpenAiClient implements LlmClient {
-  _OpenAiClient(this.apiKey);
+class _OpenAiCompatClient implements LlmClient {
+  _OpenAiCompatClient(this.apiKey, this._uri);
   final String apiKey;
+  final Uri _uri;
 
-  static final _uri = Uri.parse('https://api.openai.com/v1/chat/completions');
-
-  Map<String, String> get _headers =>
-      {'Content-Type': 'application/json', 'Authorization': 'Bearer $apiKey'};
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+      };
 
   List<Map<String, String>> _messages(List<ChatTurn> history) => [
         for (final t in history)
@@ -305,18 +324,16 @@ class _OpenAiClient implements LlmClient {
   Never _fail(int code, String body) {
     final msg = _apiErrorMessage(body);
     if (code == 401) {
-      throw const LlmException(
-          'Invalid OpenAI API key — check platform.openai.com/api-keys.');
+      throw LlmException('Invalid API key for ${_uri.host} — check your key.');
     }
     if (code == 404) {
       throw const LlmException(
           'Model not available to your account — pick another.');
     }
     if (code == 429) {
-      throw const LlmException(
-          'OpenAI rate limit or no credit — check your billing.');
+      throw LlmException('Rate limit or no credit on ${_uri.host} — check your billing.');
     }
-    throw LlmException('OpenAI error $code: $msg');
+    throw LlmException('API error $code from ${_uri.host}: $msg');
   }
 
   @override

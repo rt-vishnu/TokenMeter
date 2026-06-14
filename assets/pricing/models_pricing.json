@@ -533,5 +533,49 @@
     "display_name": "Grok 2",
     "input_per_1m": 2.00,
     "output_per_1m": 10.00
+  },
+
+  "nvidia/llama-3.1-nemotron-ultra-253b-v1": {
+    "provider": "nvidia",
+    "display_name": "Nemotron Ultra 253B",
+    "input_per_1m": 3.49,
+    "output_per_1m": 3.49
+  },
+  "nvidia/llama-3.3-nemotron-super-49b-v1": {
+    "provider": "nvidia",
+    "display_name": "Nemotron Super 49B",
+    "input_per_1m": 0.10,
+    "output_per_1m": 0.40
+  },
+  "nvidia/llama-3.1-nemotron-70b-instruct": {
+    "provider": "nvidia",
+    "display_name": "Nemotron 70B Instruct",
+    "input_per_1m": 1.20,
+    "output_per_1m": 1.20
+  },
+  "nvidia/nemotron-nano-9b-v2": {
+    "provider": "nvidia",
+    "display_name": "Nemotron Nano 9B",
+    "input_per_1m": 0.04,
+    "output_per_1m": 0.16
+  },
+
+  "kimi-k2.7-code": {
+    "provider": "moonshot",
+    "display_name": "Kimi K2.7 Code",
+    "input_per_1m": 0.95,
+    "output_per_1m": 4.00
+  },
+  "kimi-k2.6": {
+    "provider": "moonshot",
+    "display_name": "Kimi K2.6",
+    "input_per_1m": 0.95,
+    "output_per_1m": 4.00
+  },
+  "kimi-k2.5": {
+    "provider": "moonshot",
+    "display_name": "Kimi K2.5",
+    "input_per_1m": 0.60,
+    "output_per_1m": 3.00
   }
 }

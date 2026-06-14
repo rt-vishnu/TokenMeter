@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/balances/balances_screen.dart';
 import '../../features/calculator/calculator_screen.dart';
 import '../../features/chat/chat_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -71,6 +72,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      // Full-screen pushed route (own AppBar + back), not a bottom-nav tab.
+      GoRoute(
+        path: '/balances',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const BalancesScreen(),
       ),
     ],
   );

@@ -1,5 +1,5 @@
-name: token_meter
-description: TokenMeter - AI token usage tracker and cost calculator with local API integration.
+name: prompt_penny
+description: PromptPenny - AI token usage tracker and cost calculator with local API integration.
 publish_to: 'none'
 
 version: 1.0.0+1

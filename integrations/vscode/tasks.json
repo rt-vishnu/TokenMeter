@@ -2,20 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "TokenMeter: Report Usage",
+      "label": "PromptPenny: Report Usage",
       "type": "shell",
       "command": "python",
       "args": [
         "${workspaceFolder}/integrations/python/report_usage.py",
-        "--model", "${input:tokenMeterModel}",
-        "--input", "${input:tokenMeterInput}",
-        "--output", "${input:tokenMeterOutput}",
+        "--model", "${input:promptPennyModel}",
+        "--input", "${input:promptPennyInput}",
+        "--output", "${input:promptPennyOutput}",
         "--source", "vscode"
       ],
       "options": {
         "env": {
-          "TOKEN_METER_URL": "${input:tokenMeterUrl}",
-          "TOKEN_METER_API_KEY": "${input:tokenMeterApiKey}"
+          "PROMPT_PENNY_URL": "${input:promptPennyUrl}",
+          "PROMPT_PENNY_API_KEY": "${input:promptPennyApiKey}"
         }
       },
       "problemMatcher": []
@@ -23,30 +23,30 @@
   ],
   "inputs": [
     {
-      "id": "tokenMeterUrl",
+      "id": "promptPennyUrl",
       "type": "promptString",
-      "description": "TokenMeter API URL",
+      "description": "PromptPenny API URL",
       "default": "http://192.168.1.42:8765"
     },
     {
-      "id": "tokenMeterApiKey",
+      "id": "promptPennyApiKey",
       "type": "promptString",
-      "description": "TokenMeter API key"
+      "description": "PromptPenny API key"
     },
     {
-      "id": "tokenMeterModel",
+      "id": "promptPennyModel",
       "type": "promptString",
       "description": "Model ID",
       "default": "gpt-4o"
     },
     {
-      "id": "tokenMeterInput",
+      "id": "promptPennyInput",
       "type": "promptString",
       "description": "Input tokens",
       "default": "0"
     },
     {
-      "id": "tokenMeterOutput",
+      "id": "promptPennyOutput",
       "type": "promptString",
       "description": "Output tokens",
       "default": "0"
