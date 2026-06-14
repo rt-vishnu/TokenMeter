@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/services/pinned_http_client.dart';
 
 class IntegrationScreen extends ConsumerStatefulWidget {
   const IntegrationScreen({super.key});
@@ -24,6 +25,10 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
     final settings = ref.watch(settingsServiceProvider);
     final apiKey = settings.apiKey;
     final endpoint = serverState.endpoint;
+    // Full pairing string shared via QR or the "Copy pairing link" button.
+    final pairingLink = serverState.fingerprint != null
+        ? '$endpoint?key=$apiKey&fp=${serverState.fingerprint}'
+        : '$endpoint?key=$apiKey';
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -71,7 +76,26 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
                 ),
               ),
             ),
-          if (serverState.isRunning)
+          if (serverState.isRunning && serverState.isEncrypted)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Card(
+                color: Colors.green.shade800.withValues(alpha: 0.2),
+                child: ListTile(
+                  leading: const Icon(Icons.lock, color: Colors.green),
+                  title: const Text('Encrypted (self-signed)'),
+                  subtitle: Text(
+                    serverState.fingerprint == null
+                        ? 'Traffic is encrypted over HTTPS.'
+                        : 'Traffic is encrypted over HTTPS. Clients verify the '
+                            'certificate fingerprint below — scan the QR to pair '
+                            'automatically. Third-party tools must skip cert '
+                            'verification (e.g. curl -k).',
+                  ),
+                ),
+              ),
+            ),
+          if (serverState.isRunning && !serverState.isEncrypted)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Card(
@@ -81,7 +105,8 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
                       color: Colors.amber),
                   title: const Text('Unencrypted connection'),
                   subtitle: const Text(
-                    'API server is running over HTTP. Only use on trusted networks.',
+                    'API server is running over HTTP. Enable HTTPS in Settings, '
+                    'or only use on trusted networks.',
                   ),
                 ),
               ),
@@ -105,17 +130,55 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
         if (endpoint != null) ...[
           const SizedBox(height: 8),
           _InfoTile(label: 'Endpoint', value: endpoint, copyable: true),
+          if (serverState.fingerprint != null) ...[
+            const SizedBox(height: 8),
+            _InfoTile(
+              label: 'Certificate fingerprint (SHA-256)',
+              value: serverState.fingerprint!,
+              copyable: true,
+            ),
+          ],
           const SizedBox(height: 8),
-          _TestConnectionTile(endpoint: endpoint, apiKey: apiKey),
+          _TestConnectionTile(
+            endpoint: endpoint,
+            apiKey: apiKey,
+            pinnedFingerprint: serverState.fingerprint,
+          ),
+          const SizedBox(height: 12),
+          // One-tap pairing: copies the full URL (endpoint + key + cert pin).
+          // Paste it into the web client's host field — it parses everything.
+          FilledButton.tonalIcon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: pairingLink));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Pairing link copied')),
+              );
+            },
+            icon: const Icon(Icons.link),
+            label: const Text('Copy pairing link'),
+          ),
           const SizedBox(height: 16),
           Center(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: QrImageView(
-                  data: '$endpoint?key=$apiKey',
-                  version: QrVersions.auto,
-                  size: 180,
+            child: Container(
+              // QR must be dark-on-white to stay scannable and visible in dark
+              // mode; the white padding is the required quiet zone.
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: QrImageView(
+                data: pairingLink,
+                version: QrVersions.auto,
+                size: 180,
+                backgroundColor: Colors.white,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Colors.black,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Colors.black,
                 ),
               ),
             ),
@@ -126,6 +189,7 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
           _TestConnectionTile(
             endpoint: settings.remoteHostUrl!,
             apiKey: settings.remoteApiKey ?? '',
+            pinnedFingerprint: settings.remotePinnedFingerprint,
           ),
         ],
         const SizedBox(height: 16),
@@ -146,7 +210,11 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
 
   String _jsSnippet(String? endpoint, String apiKey) {
     final url = endpoint ?? 'http://<YOUR_IP>:${AppConstants.defaultApiPort}';
-    return '''// Node.js (built-in fetch, Node 18+)
+    // For a self-signed cert, Node must be told to accept it.
+    final tlsNote = url.startsWith('https')
+        ? '// Self-signed cert: run with NODE_TLS_REJECT_UNAUTHORIZED=0\n'
+        : '';
+    return '''$tlsNote// Node.js (built-in fetch, Node 18+)
 await fetch("$url/api/v1/usage", {
   method: "POST",
   headers: {
@@ -202,14 +270,18 @@ await fetch("$url/api/v1/usage", {
 
   String _curlSnippet(String? endpoint, String apiKey) {
     final url = endpoint ?? 'http://<YOUR_IP>:${AppConstants.defaultApiPort}';
+    // -k tells curl to accept the server's self-signed certificate.
+    final insecure = url.startsWith('https') ? '-k ' : '';
     return '''curl -X POST "$url/api/v1/usage" \\
-  -H "Authorization: Bearer $apiKey" \\
+  $insecure-H "Authorization: Bearer $apiKey" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"gpt-4o","input_tokens":1200,"output_tokens":300,"source":"cursor"}' ''';
   }
 
   String _powershellSnippet(String? endpoint, String apiKey) {
     final url = endpoint ?? 'http://<YOUR_IP>:${AppConstants.defaultApiPort}';
+    // -SkipCertificateCheck (PowerShell 7+) accepts the self-signed cert.
+    final skip = url.startsWith('https') ? ' -SkipCertificateCheck' : '';
     return r'''$headers = @{
   "Authorization" = "Bearer ''' +
         apiKey +
@@ -219,11 +291,14 @@ await fetch("$url/api/v1/usage", {
 $body = '{"model":"gpt-4o","input_tokens":1200,"output_tokens":300,"source":"cursor"}'
 Invoke-RestMethod -Uri "''' +
         url +
-        r'''/api/v1/usage" -Method POST -Headers $headers -Body $body''';
+        r'''/api/v1/usage" -Method POST -Headers $headers -Body $body''' +
+        skip;
   }
 
   String _pythonSnippet(String? endpoint, String apiKey) {
     final url = endpoint ?? 'http://<YOUR_IP>:${AppConstants.defaultApiPort}';
+    // verify=False accepts the server's self-signed certificate.
+    final verify = url.startsWith('https') ? '\n    verify=False,' : '';
     return '''import requests
 
 requests.post(
@@ -234,7 +309,7 @@ requests.post(
         "input_tokens": 1200,
         "output_tokens": 300,
         "source": "cursor",
-    },
+    },$verify
 )''';
   }
 }
@@ -293,10 +368,18 @@ class _ApiKeyTile extends StatelessWidget {
 }
 
 class _TestConnectionTile extends StatefulWidget {
-  const _TestConnectionTile({required this.endpoint, required this.apiKey});
+  const _TestConnectionTile({
+    required this.endpoint,
+    required this.apiKey,
+    this.pinnedFingerprint,
+  });
 
   final String endpoint;
   final String apiKey;
+
+  /// When set, the test accepts the server's self-signed cert if its
+  /// fingerprint matches (native); ignored on web.
+  final String? pinnedFingerprint;
 
   @override
   State<_TestConnectionTile> createState() => _TestConnectionTileState();
@@ -320,12 +403,18 @@ class _TestConnectionTileState extends State<_TestConnectionTile> {
       final normalized = widget.endpoint.endsWith('/')
           ? widget.endpoint.substring(0, widget.endpoint.length - 1)
           : widget.endpoint;
-      final response = await http
-          .get(
-            Uri.parse('$normalized/api/v1/stats'),
-            headers: {'Authorization': 'Bearer ${widget.apiKey}'},
-          )
-          .timeout(const Duration(seconds: 5));
+      final client = createPinnedClient(widget.pinnedFingerprint);
+      final http.Response response;
+      try {
+        response = await client
+            .get(
+              Uri.parse('$normalized/api/v1/stats'),
+              headers: {'Authorization': 'Bearer ${widget.apiKey}'},
+            )
+            .timeout(const Duration(seconds: 5));
+      } finally {
+        client.close();
+      }
       if (!mounted) return;
       if (response.statusCode == 200) {
         messenger.showSnackBar(

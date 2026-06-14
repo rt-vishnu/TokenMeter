@@ -174,7 +174,11 @@ final remoteApiClientProvider = Provider<RemoteApiClient?>((ref) {
   if (host == null || host.isEmpty) return null;
   final apiKey = settings.remoteApiKey;
   if (apiKey == null || apiKey.isEmpty) return null;
-  return RemoteApiClient(baseUrl: host, apiKey: apiKey);
+  return RemoteApiClient(
+    baseUrl: host,
+    apiKey: apiKey,
+    pinnedFingerprint: settings.remotePinnedFingerprint,
+  );
 });
 
 final networkServiceProvider = Provider<NetworkService>((ref) {
@@ -205,6 +209,8 @@ class ServerState {
     this.host,
     this.port,
     this.requestedPort,
+    this.scheme = 'http',
+    this.fingerprint,
     this.error,
   });
 
@@ -215,14 +221,20 @@ class ServerState {
   final int? port;
   /// Non-null when the server fell back to a different port.
   final int? requestedPort;
+  /// 'https' when serving over TLS, otherwise 'http'.
+  final String scheme;
+  /// SHA-256 fingerprint of the served cert (HTTPS only), shared via the QR.
+  final String? fingerprint;
   final String? error;
 
   bool get usedFallbackPort =>
       requestedPort != null && requestedPort != port;
 
+  bool get isEncrypted => scheme == 'https';
+
   String? get endpoint {
     if (host == null || port == null) return null;
-    return 'http://$host:$port';
+    return '$scheme://$host:$port';
   }
 
   ServerState copyWith({
@@ -231,6 +243,8 @@ class ServerState {
     String? host,
     int? port,
     int? requestedPort,
+    String? scheme,
+    String? fingerprint,
     String? error,
   }) {
     return ServerState(
@@ -239,6 +253,8 @@ class ServerState {
       host: host ?? this.host,
       port: port ?? this.port,
       requestedPort: requestedPort ?? this.requestedPort,
+      scheme: scheme ?? this.scheme,
+      fingerprint: fingerprint ?? this.fingerprint,
       error: error,
     );
   }
@@ -266,13 +282,16 @@ class ServerStateNotifier extends StateNotifier<ServerState> {
       }
       final port = settings.apiPort;
       try {
-        final boundPort = await server.start(ip, port);
+        final boundPort =
+            await server.start(ip, port, useHttps: settings.useHttps);
         await settings.setServerEnabled(true);
         state = ServerState(
           isRunning: true,
           host: ip,
           port: boundPort,
           requestedPort: boundPort != port ? port : null,
+          scheme: server.scheme,
+          fingerprint: server.fingerprint,
         );
       } catch (e) {
         if (LocalApiServer.isPortBindError(e)) {
@@ -295,6 +314,17 @@ class ServerStateNotifier extends StateNotifier<ServerState> {
   Future<void> restoreIfEnabled() async {
     final settings = _ref.read(settingsServiceProvider);
     if (settings.serverEnabled) {
+      await toggle(true);
+    }
+  }
+
+  /// Changes the HTTPS preference, restarting the server if it's running so
+  /// the new scheme takes effect immediately.
+  Future<void> setHttps(bool useHttps) async {
+    final settings = _ref.read(settingsServiceProvider);
+    await settings.setUseHttps(useHttps);
+    if (state.isRunning) {
+      await toggle(false);
       await toggle(true);
     }
   }
@@ -339,15 +369,35 @@ final usageRecordsProvider = StreamProvider<List<UsageRecord>>((ref) {
   if (usage != null) {
     return usage.watchAll();
   }
-
-  return Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
-    final client = ref.read(remoteApiClientProvider);
-    if (client == null) return <UsageRecord>[];
-    // Let the exception propagate — StreamProvider turns it into AsyncError
-    // so the UI can show a "Could not reach remote server" banner.
-    return client.getUsage();
-  });
+  return _pollRemoteUsage(ref);
 });
+
+/// Web client polling loop for the remote API. Fetches immediately (no initial
+/// delay), then every 3s. Crucially it caches the last successful result and
+/// keeps yielding it through transient failures — so a backgrounded/throttled
+/// tab or a dropped request doesn't blank the dashboard. Only a failure with no
+/// data yet surfaces an error (the "Could not reach remote server" banner).
+Stream<List<UsageRecord>> _pollRemoteUsage(Ref ref) async* {
+  List<UsageRecord>? last;
+  while (true) {
+    final client = ref.read(remoteApiClientProvider);
+    if (client == null) {
+      yield const <UsageRecord>[];
+    } else {
+      try {
+        last = await client.getUsage();
+        yield last;
+      } catch (_) {
+        if (last != null) {
+          yield last; // keep the last good data visible
+        } else {
+          rethrow; // nothing cached → let the UI show the error banner
+        }
+      }
+    }
+    await Future<void>.delayed(const Duration(seconds: 3));
+  }
+}
 
 /// Calendar-based dashboard periods. "Today" means since midnight,
 /// "This Week" since Monday, "This Month" since the 1st — matching the

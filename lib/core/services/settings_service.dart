@@ -14,9 +14,15 @@ class SettingsService {
   static const _apiKeyPrefKey = 'api_key'; // legacy SharedPreferences key
   static const _apiKeySecureKey = 'token_meter_api_key';
   static const _serverEnabledKey = 'server_enabled';
+  static const _useHttpsKey = 'server_use_https';
   static const _apiPortKey = 'api_port';
   static const _remoteHostKey = 'remote_host_url';
   static const _remoteApiKeySecureKey = 'remote_api_key';
+  static const _remotePinnedFpKey = 'remote_pinned_fingerprint';
+  // Self-signed TLS material for the local API server. The private key is
+  // sensitive, so cert+key live in secure storage; the fingerprint is public.
+  static const _tlsCertSecureKey = 'tls_cert_pem';
+  static const _tlsKeySecureKey = 'tls_key_pem';
   static const _darkModeKey = 'dark_mode';
   static const _currencyKey = 'currency';
   static const _dailyBudgetKey = 'daily_budget';
@@ -42,6 +48,8 @@ class SettingsService {
   String? _cachedNvidiaKey;
   String? _cachedKimiKey;
   String? _cachedRemoteApiKey;
+  String? _cachedTlsCertPem;
+  String? _cachedTlsKeyPem;
   final Map<String, String?> _cachedBillingKeys = {};
 
   /// Call once at startup to migrate legacy key and warm the cache.
@@ -52,6 +60,8 @@ class SettingsService {
     _cachedNvidiaKey = await _secure.read(key: _nvidiaKeySecureKey);
     _cachedKimiKey = await _secure.read(key: _kimiKeySecureKey);
     _cachedRemoteApiKey = await _secure.read(key: _remoteApiKeySecureKey);
+    _cachedTlsCertPem = await _secure.read(key: _tlsCertSecureKey);
+    _cachedTlsKeyPem = await _secure.read(key: _tlsKeySecureKey);
     for (final id in _billingProviderIds) {
       _cachedBillingKeys[id] = await _secure.read(key: 'billing_$id');
     }
@@ -93,6 +103,43 @@ class SettingsService {
 
   Future<void> setServerEnabled(bool value) =>
       _prefs.setBool(_serverEnabledKey, value);
+
+  /// Whether the local API server serves over HTTPS (self-signed). Default on.
+  bool get useHttps => _prefs.getBool(_useHttpsKey) ?? true;
+
+  Future<void> setUseHttps(bool value) => _prefs.setBool(_useHttpsKey, value);
+
+  // ── Self-signed TLS material (server side) ────────────────────────────────
+
+  String? get tlsCertPem => _cachedTlsCertPem;
+  String? get tlsKeyPem => _cachedTlsKeyPem;
+
+  /// Persists (or clears) the generated cert+key. Pass nulls to force the
+  /// server to mint a fresh certificate on next start.
+  Future<void> setTlsMaterial(String? certPem, String? keyPem) async {
+    if (certPem == null || keyPem == null) {
+      await _secure.delete(key: _tlsCertSecureKey);
+      await _secure.delete(key: _tlsKeySecureKey);
+      _cachedTlsCertPem = null;
+      _cachedTlsKeyPem = null;
+    } else {
+      await _secure.write(key: _tlsCertSecureKey, value: certPem);
+      await _secure.write(key: _tlsKeySecureKey, value: keyPem);
+      _cachedTlsCertPem = certPem;
+      _cachedTlsKeyPem = keyPem;
+    }
+  }
+
+  /// Fingerprint of the remote server's cert, pinned by the web/desktop client.
+  String? get remotePinnedFingerprint => _prefs.getString(_remotePinnedFpKey);
+
+  Future<void> setRemotePinnedFingerprint(String? fp) async {
+    if (fp == null || fp.isEmpty) {
+      await _prefs.remove(_remotePinnedFpKey);
+    } else {
+      await _prefs.setString(_remotePinnedFpKey, fp);
+    }
+  }
 
   int get apiPort => _prefs.getInt(_apiPortKey) ?? AppConstants.defaultApiPort;
 

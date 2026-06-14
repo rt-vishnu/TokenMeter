@@ -4,15 +4,20 @@ import 'package:http/http.dart' as http;
 
 import '../models/usage_payload.dart';
 import '../models/usage_record.dart';
+import 'pinned_http_client.dart';
 
 class RemoteApiClient {
   RemoteApiClient({
     required this.baseUrl,
     required this.apiKey,
-  });
+    String? pinnedFingerprint,
+  }) : _client = createPinnedClient(pinnedFingerprint);
 
   final String baseUrl;
   final String apiKey;
+
+  /// Pins the server's self-signed cert on native; plain client on web.
+  final http.Client _client;
 
   static const _maxAttempts = 3;
   static const _initialBackoff = Duration(seconds: 1);
@@ -50,7 +55,7 @@ class RemoteApiClient {
 
   Future<bool> healthCheck() async {
     try {
-      final response = await http.get(_uri('/api/v1/health'));
+      final response = await _client.get(_uri('/api/v1/health'));
       return response.statusCode == 200;
     } catch (_) {
       return false;
@@ -70,7 +75,7 @@ class RemoteApiClient {
       if (source != null) query['source'] = source;
       if (model != null) query['model'] = model;
 
-      final response = await http.get(
+      final response = await _client.get(
         _uri('/api/v1/usage', query.isEmpty ? null : query),
         headers: _headers,
       );
@@ -88,7 +93,7 @@ class RemoteApiClient {
 
   Future<UsageRecord> postUsage(UsagePayload payload) async {
     return _withRetry(() async {
-      final response = await http.post(
+      final response = await _client.post(
         _uri('/api/v1/usage'),
         headers: _headers,
         body: jsonEncode({
@@ -113,7 +118,7 @@ class RemoteApiClient {
 
   Future<Map<String, dynamic>> estimate(EstimatePayload payload) async {
     return _withRetry(() async {
-      final response = await http.post(
+      final response = await _client.post(
         _uri('/api/v1/estimate'),
         headers: _headers,
         body: jsonEncode({
@@ -135,7 +140,7 @@ class RemoteApiClient {
 
   Future<List<Map<String, dynamic>>> getModels() async {
     return _withRetry(() async {
-      final response = await http.get(_uri('/api/v1/models'));
+      final response = await _client.get(_uri('/api/v1/models'));
       if (response.statusCode != 200) {
         throw Exception('Failed to fetch models: ${response.statusCode}');
       }

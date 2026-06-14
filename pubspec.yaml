@@ -28,6 +28,9 @@ dependencies:
   shared_preferences: ^2.5.3
   flutter_secure_storage: ^9.2.2
   http: ^1.2.2
+  basic_utils: ^5.7.0
+  crypto: ^3.0.5
+  mobile_scanner: ^5.2.3
   google_fonts: ^6.2.1
   open_file: ^3.5.11
   url_launcher: ^6.3.2
