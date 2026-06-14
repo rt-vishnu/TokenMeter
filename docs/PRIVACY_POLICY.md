@@ -162,7 +162,7 @@ notes.
 
 Questions about this policy or PromptPenny's data handling:
 
-- **Contact:** _<add your support email here>_
+- **Contact:** ravi.vishnubhotla123@gmail.com
 
 > Note: replace the contact line above with your real support address before
 > publishing to an app store.
