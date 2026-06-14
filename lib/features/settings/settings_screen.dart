@@ -10,6 +10,8 @@ import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_providers_common.dart';
 import '../../core/services/pricing_repository.dart';
 import '../../core/services/settings_service.dart';
+import '../../core/utils/pairing.dart';
+import '../integration/qr_scan_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -43,16 +45,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _saveRemoteConnection() async {
+  /// Persists a parsed pairing (host + key + cert pin), reflecting the cleaned
+  /// values back into the fields. [typedKey] takes precedence over a key
+  /// embedded in the pairing URL (so a manually entered key isn't overwritten).
+  Future<void> _applyPairing(PairingInfo pairing, String typedKey) async {
     final settings = ref.read(settingsServiceProvider);
     final messenger = ScaffoldMessenger.of(context);
-    await settings.setRemoteHostUrl(_remoteHostController.text.trim());
-    await settings.setRemoteApiKey(_remoteApiKeyController.text.trim());
+    final key = typedKey.isNotEmpty ? typedKey : (pairing.apiKey ?? '');
+
+    await settings.setRemoteHostUrl(pairing.host);
+    await settings.setRemoteApiKey(key);
+    await settings.setRemotePinnedFingerprint(pairing.fingerprint);
     ref.read(remoteSettingsRevisionProvider.notifier).state++;
     ref.read(usageRefreshTickProvider.notifier).bump();
+
+    _remoteHostController.text = pairing.host;
+    _remoteApiKeyController.text = key;
+    if (!mounted) return;
+    setState(() {});
     messenger.showSnackBar(
-      const SnackBar(content: Text('Remote connection saved')),
+      SnackBar(
+        content: Text(pairing.fingerprint != null
+            ? 'Remote connection saved (certificate pinned)'
+            : 'Remote connection saved'),
+      ),
     );
+  }
+
+  // Accepts either a bare host URL or the full pairing URL from the QR
+  // (e.g. https://192.168.1.42:8765?key=…&fp=…) and splits out key + pin.
+  Future<void> _saveRemoteConnection() => _applyPairing(
+        PairingInfo.parse(_remoteHostController.text),
+        _remoteApiKeyController.text.trim(),
+      );
+
+  Future<void> _scanToPair() async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (result == null || !mounted) return;
+    await _applyPairing(PairingInfo.parse(result), '');
+  }
+
+  /// mobile_scanner has a camera implementation on web, mobile, and macOS —
+  /// but not Windows/Linux, where we keep the paste-URL fallback only.
+  bool get _scannerSupported {
+    if (kIsWeb) return true;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return true;
+      default:
+        return false;
+    }
   }
 
   @override
@@ -81,7 +127,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: EdgeInsets.all(16),
               child: Text(
                 'Copy the endpoint URL and API key from Integration on your '
-                'phone (with API server enabled). Both are required.',
+                'phone (with API server enabled). Both are required. Tip: paste '
+                'the full pairing URL from the QR into the host field and the '
+                'key and certificate pin fill in automatically.',
               ),
             ),
           ),
@@ -105,13 +153,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             enableSuggestions: false,
           ),
           const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _saveRemoteConnection,
-            child: const Text('Save remote connection'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: _saveRemoteConnection,
+                  child: const Text('Save remote connection'),
+                ),
+              ),
+              if (_scannerSupported) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _scanToPair,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan QR'),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 16),
         ],
         if (!kIsWeb) ...[
+          Card(
+            child: SwitchListTile(
+              title: const Text('Use HTTPS (recommended)'),
+              subtitle: const Text(
+                'Encrypts API traffic with a self-signed certificate. '
+                'Restarts the server if it is running.',
+              ),
+              value: settings.useHttps,
+              onChanged: (v) async {
+                await ref.read(serverStateProvider.notifier).setHttps(v);
+                if (mounted) setState(() {});
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: _portController,
             decoration: const InputDecoration(

@@ -10,6 +10,7 @@ import '../constants/app_constants.dart';
 import '../models/usage_payload.dart';
 import 'pricing_repository.dart';
 import 'settings_service.dart';
+import 'tls_certificate_service.dart';
 
 class LocalApiServer {
   LocalApiServer({
@@ -27,6 +28,7 @@ class LocalApiServer {
   HttpServer? _server;
   String? _boundAddress;
   final _requestTimestamps = <DateTime>[];
+  final _tls = TlsCertificateService();
 
   static const portFallbackCount = 4;
   // 2-second window to drain in-flight requests before force-closing.
@@ -41,10 +43,32 @@ class LocalApiServer {
   int? get requestedPort => _requestedPort;
   int? _requestedPort;
 
+  /// 'https' when serving with TLS, otherwise 'http'.
+  String get scheme => _scheme;
+  String _scheme = 'http';
+
+  /// SHA-256 fingerprint of the served certificate (HTTPS only), for pinning.
+  String? get fingerprint => _fingerprint;
+  String? _fingerprint;
+
   /// Tries [port] first, then up to [_portFallbackCount] successive ports.
   /// Returns the port actually bound, or throws if all attempts fail.
-  Future<int> start(String host, int port) async {
+  ///
+  /// When [useHttps] is set, serves over TLS using a cached self-signed
+  /// certificate (minting and persisting one on first use).
+  Future<int> start(String host, int port, {bool useHttps = false}) async {
     await stop();
+
+    SecurityContext? securityContext;
+    if (useHttps) {
+      final tls = await _loadOrCreateTls(host);
+      securityContext = tls.securityContext;
+      _scheme = 'https';
+      _fingerprint = tls.fingerprint;
+    } else {
+      _scheme = 'http';
+      _fingerprint = null;
+    }
 
     final router = Router()
       ..get('/api/v1/health', _health)
@@ -66,7 +90,12 @@ class LocalApiServer {
     for (var attempt = 0; attempt <= portFallbackCount; attempt++) {
       final candidate = port + attempt;
       try {
-        _server = await shelf_io.serve(handler, host, candidate);
+        _server = await shelf_io.serve(
+          handler,
+          host,
+          candidate,
+          securityContext: securityContext,
+        );
         _boundAddress = host;
         _requestedPort = (attempt == 0) ? null : port;
         return candidate;
@@ -75,6 +104,19 @@ class LocalApiServer {
       }
     }
     throw lastError!;
+  }
+
+  /// Reuses the cached cert/key when present (so the pinned fingerprint stays
+  /// stable across restarts); otherwise mints a fresh one and persists it.
+  Future<TlsMaterial> _loadOrCreateTls(String host) async {
+    final certPem = _settings.tlsCertPem;
+    final keyPem = _settings.tlsKeyPem;
+    if (certPem != null && keyPem != null) {
+      return _tls.fromPem(certPem, keyPem);
+    }
+    final material = await _tls.generate(ip: host);
+    await _settings.setTlsMaterial(material.certPem, material.keyPem);
+    return material;
   }
 
   /// Gracefully drains in-flight requests before closing.

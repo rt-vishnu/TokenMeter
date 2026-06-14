@@ -7,10 +7,13 @@ class LocalApiServer {
   String? get boundAddress => null;
   int? get port => null;
   int? get requestedPort => null;
+  String get scheme => 'http';
+  String? get fingerprint => null;
 
   static bool isPortBindError(Object error) => false;
 
-  Future<int> start(String host, int port) async => port;
+  Future<int> start(String host, int port, {bool useHttps = false}) async =>
+      port;
 
   Future<void> stop() async {}
 }
