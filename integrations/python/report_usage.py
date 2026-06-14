@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report AI token usage to TokenMeter."""
+"""Report AI token usage to PromptPenny."""
 
 import argparse
 import json
@@ -43,9 +43,9 @@ def report_usage(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Report usage to TokenMeter")
-    parser.add_argument("--url", default=os.environ.get("TOKEN_METER_URL", DEFAULT_URL))
-    parser.add_argument("--api-key", default=os.environ.get("TOKEN_METER_API_KEY", ""))
+    parser = argparse.ArgumentParser(description="Report usage to PromptPenny")
+    parser.add_argument("--url", default=os.environ.get("PROMPT_PENNY_URL", DEFAULT_URL))
+    parser.add_argument("--api-key", default=os.environ.get("PROMPT_PENNY_API_KEY", ""))
     parser.add_argument("--model", required=True)
     parser.add_argument("--input", type=int, required=True, dest="input_tokens")
     parser.add_argument("--output", type=int, required=True, dest="output_tokens")
@@ -54,7 +54,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.api_key:
-        raise SystemExit("Set --api-key or TOKEN_METER_API_KEY")
+        raise SystemExit("Set --api-key or PROMPT_PENNY_API_KEY")
 
     result = report_usage(
         base_url=args.url,

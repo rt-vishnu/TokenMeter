@@ -5,7 +5,7 @@ import * as http from 'http';
 // ── Config helpers ────────────────────────────────────────────────────────────
 
 function cfg() {
-  return vscode.workspace.getConfiguration('tokenmeter');
+  return vscode.workspace.getConfiguration('promptpenny');
 }
 
 function getUrl(): string {
@@ -99,7 +99,7 @@ async function reportUsage(
   const key = getApiKey();
   if (!key) {
     vscode.window.showWarningMessage(
-      'TokenMeter: API key not set. Go to Settings → Extensions → TokenMeter.',
+      'PromptPenny: API key not set. Go to Settings → Extensions → PromptPenny.',
     );
     return;
   }
@@ -112,12 +112,12 @@ async function reportUsage(
       source: getSource(),
       metadata,
     });
-    statusBar.text = `$(graph) TokenMeter: +${inputTokens + outputTokens} tokens`;
+    statusBar.text = `$(graph) PromptPenny: +${inputTokens + outputTokens} tokens`;
     statusBar.tooltip = `${model} — in:${inputTokens} out:${outputTokens}`;
     setTimeout(() => updateStatusBar(), 4000);
   } catch (err) {
     // Silent fail — don't interrupt the dev's flow.
-    console.error('[TokenMeter] Failed to report usage:', err);
+    console.error('[PromptPenny] Failed to report usage:', err);
   }
 }
 
@@ -127,12 +127,12 @@ let statusBar: vscode.StatusBarItem;
 
 function updateStatusBar() {
   if (!isEnabled() || !getApiKey()) {
-    statusBar.text = '$(graph) TokenMeter: not configured';
-    statusBar.tooltip = 'Click to open TokenMeter settings';
+    statusBar.text = '$(graph) PromptPenny: not configured';
+    statusBar.tooltip = 'Click to open PromptPenny settings';
     return;
   }
-  statusBar.text = '$(graph) TokenMeter';
-  statusBar.tooltip = 'TokenMeter active — click to show status';
+  statusBar.text = '$(graph) PromptPenny';
+  statusBar.tooltip = 'PromptPenny active — click to show status';
 }
 
 // ── Copilot Chat hook ─────────────────────────────────────────────────────────
@@ -145,19 +145,19 @@ function hookCopilotChat(context: vscode.ExtensionContext): void {
   // to observing chat participant responses.
 
   if (!('lm' in vscode)) {
-    console.log('[TokenMeter] vscode.lm API not available — Copilot hook skipped.');
+    console.log('[PromptPenny] vscode.lm API not available — Copilot hook skipped.');
     return;
   }
 
   // Register a chat participant that wraps any @workspace or inline chat.
   // This is the supported way to observe chat responses in extensions.
   const participant = vscode.chat.createChatParticipant(
-    'tokenmeter.observer',
+    'promptpenny.observer',
     async (request, _ctx, stream, token) => {
       // Forward the request to GitHub Copilot and capture usage.
       const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
       if (models.length === 0) {
-        stream.markdown('*(TokenMeter: no Copilot model found)*');
+        stream.markdown('*(PromptPenny: no Copilot model found)*');
         return;
       }
       const model = models[0];
@@ -203,9 +203,9 @@ function hookLanguageModelAPI(context: vscode.ExtensionContext): void {
   // Listen for model changes (fired when Copilot responds).
   // We listen to completion requests via the proposed notebookKernel approach
   // since the full intercept API is not yet stable. Instead we rely on the
-  // @tokenmeter chat participant above and workspace symbol events as proxy.
+  // @promptpenny chat participant above and workspace symbol events as proxy.
 
-  // Alternative: poll /api/v1/stats from TokenMeter every 30s to update the
+  // Alternative: poll /api/v1/stats from PromptPenny every 30s to update the
   // status bar with cumulative session cost.
   const pollInterval = setInterval(async () => {
     if (!isEnabled() || !getApiKey()) return;
@@ -215,7 +215,7 @@ function hookLanguageModelAPI(context: vscode.ExtensionContext): void {
       if (today) {
         statusBar.text = `$(graph) $${today.cost.toFixed(4)} today`;
         statusBar.tooltip =
-          `TokenMeter — Today: ${today.requests} req, ${today.tokens} tokens, $${today.cost.toFixed(6)}\nClick to show status`;
+          `PromptPenny — Today: ${today.requests} req, ${today.tokens} tokens, $${today.cost.toFixed(6)}\nClick to show status`;
       }
     } catch {
       // Server not running — silent.
@@ -230,10 +230,10 @@ function hookLanguageModelAPI(context: vscode.ExtensionContext): void {
 async function cmdTestConnection(): Promise<void> {
   try {
     await get('/api/v1/health');
-    vscode.window.showInformationMessage('TokenMeter: Connected ✓');
+    vscode.window.showInformationMessage('PromptPenny: Connected ✓');
   } catch (err) {
     vscode.window.showErrorMessage(
-      `TokenMeter: Connection failed — ${err}\n` +
+      `PromptPenny: Connection failed — ${err}\n` +
       `Check that the app is running with Integration → Enable API Server ON, ` +
       `and verify the URL in settings (currently: ${getUrl()})`,
     );
@@ -255,7 +255,7 @@ async function cmdShowStatus(): Promise<void> {
 
     vscode.window.showInformationMessage(msg, { modal: true });
   } catch (err) {
-    vscode.window.showErrorMessage(`TokenMeter: Could not fetch stats — ${err}`);
+    vscode.window.showErrorMessage(`PromptPenny: Could not fetch stats — ${err}`);
   }
 }
 
@@ -264,24 +264,24 @@ async function cmdShowStatus(): Promise<void> {
 export function activate(context: vscode.ExtensionContext): void {
   // Status bar item
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBar.command = 'tokenmeter.showStatus';
+  statusBar.command = 'promptpenny.showStatus';
   statusBar.show();
   updateStatusBar();
   context.subscriptions.push(statusBar);
 
   // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('tokenmeter.testConnection', cmdTestConnection),
-    vscode.commands.registerCommand('tokenmeter.showStatus', cmdShowStatus),
-    vscode.commands.registerCommand('tokenmeter.openSettings', () =>
-      vscode.commands.executeCommand('workbench.action.openSettings', 'tokenmeter'),
+    vscode.commands.registerCommand('promptpenny.testConnection', cmdTestConnection),
+    vscode.commands.registerCommand('promptpenny.showStatus', cmdShowStatus),
+    vscode.commands.registerCommand('promptpenny.openSettings', () =>
+      vscode.commands.executeCommand('workbench.action.openSettings', 'promptpenny'),
     ),
   );
 
   // React to config changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('tokenmeter')) updateStatusBar();
+      if (e.affectsConfiguration('promptpenny')) updateStatusBar();
     }),
   );
 
@@ -289,7 +289,7 @@ export function activate(context: vscode.ExtensionContext): void {
   hookCopilotChat(context);
   hookLanguageModelAPI(context);
 
-  console.log('[TokenMeter] Extension activated');
+  console.log('[PromptPenny] Extension activated');
 }
 
 export function deactivate(): void {}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Call Gemini API, then report real token usage to TokenMeter.
+Call Gemini API, then report real token usage to PromptPenny.
 
 Setup:
   cd integrations/python
@@ -29,7 +29,7 @@ _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 
 # Use a current model id — bare "gemini-1.5-flash" and "gemini-2.0-flash" are retired.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_TOKEN_METER_URL = "http://127.0.0.1:8765"
+DEFAULT_PROMPT_PENNY_URL = "http://127.0.0.1:8765"
 DEFAULT_PROMPT = "Reply with exactly one short sentence about token usage tracking."
 
 
@@ -54,7 +54,7 @@ def gemini_quota_help() -> str:
         "  • Try another model in .env: GEMINI_MODEL=gemini-2.5-flash-lite\n"
         "  • List models your key supports: python test_gemini.py --list-models\n"
         "  • Enable billing in Google AI Studio for paid quota\n"
-        "  • Test TokenMeter only (skip Gemini): python test_gemini.py --token-meter-only"
+        "  • Test PromptPenny only (skip Gemini): python test_gemini.py --prompt-penny-only"
     )
 
 
@@ -85,7 +85,7 @@ def call_gemini(api_key: str, prompt: str, model: str = DEFAULT_GEMINI_MODEL) ->
         return json.loads(resp.read().decode("utf-8"))
 
 
-def report_to_token_meter(
+def report_to_prompt_penny(
     base_url: str,
     api_key: str,
     model: str,
@@ -120,30 +120,30 @@ def main() -> None:
     load_env()
 
     parser = argparse.ArgumentParser(
-        description="Test Gemini API and report usage to TokenMeter"
+        description="Test Gemini API and report usage to PromptPenny"
     )
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--gemini-key", default=os.environ.get("GEMINI_API_KEY", ""))
     parser.add_argument(
-        "--token-meter-url",
-        default=os.environ.get("TOKEN_METER_URL", DEFAULT_TOKEN_METER_URL),
+        "--prompt-penny-url",
+        default=os.environ.get("PROMPT_PENNY_URL", DEFAULT_PROMPT_PENNY_URL),
     )
     parser.add_argument(
-        "--token-meter-key",
-        default=os.environ.get("TOKEN_METER_API_KEY", ""),
+        "--prompt-penny-key",
+        default=os.environ.get("PROMPT_PENNY_API_KEY", ""),
     )
     parser.add_argument(
         "--gemini-model",
         default=os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
     )
     parser.add_argument(
-        "--token-meter-model",
-        default=os.environ.get("TOKEN_METER_MODEL", ""),
-        help="Model id for cost lookup in TokenMeter (defaults to GEMINI_MODEL)",
+        "--prompt-penny-model",
+        default=os.environ.get("PROMPT_PENNY_MODEL", ""),
+        help="Model id for cost lookup in PromptPenny (defaults to GEMINI_MODEL)",
     )
     parser.add_argument(
         "--source",
-        default=os.environ.get("TOKEN_METER_SOURCE", "gemini-api-test"),
+        default=os.environ.get("PROMPT_PENNY_SOURCE", "gemini-api-test"),
     )
     parser.add_argument(
         "--list-models",
@@ -151,15 +151,15 @@ def main() -> None:
         help="List Gemini models available for your API key, then exit",
     )
     parser.add_argument(
-        "--token-meter-only",
+        "--prompt-penny-only",
         action="store_true",
-        help="Skip Gemini API; send sample token counts to TokenMeter only",
+        help="Skip Gemini API; send sample token counts to PromptPenny only",
     )
     parser.add_argument("--input", type=int, default=50, dest="input_tokens")
     parser.add_argument("--output", type=int, default=20, dest="output_tokens")
     args = parser.parse_args()
 
-    token_meter_model = args.token_meter_model or args.gemini_model
+    prompt_penny_model = args.prompt_penny_model or args.gemini_model
 
     if args.list_models:
         if not args.gemini_key:
@@ -174,16 +174,16 @@ def main() -> None:
             print(f"  {name}")
         sys.exit(0)
 
-    if not args.token_meter_key:
+    if not args.prompt_penny_key:
         sys.exit(
-            "Missing TOKEN_METER_API_KEY.\n"
-            "Add it to integrations/python/.env (from TokenMeter → Integration)."
+            "Missing PROMPT_PENNY_API_KEY.\n"
+            "Add it to integrations/python/.env (from PromptPenny → Integration)."
         )
 
-    if args.token_meter_only:
+    if args.prompt_penny_only:
         input_tokens = args.input_tokens
         output_tokens = args.output_tokens
-        print("1) Skipping Gemini (--token-meter-only)")
+        print("1) Skipping Gemini (--prompt-penny-only)")
         print(f"   Using sample tokens — input: {input_tokens}, output: {output_tokens}")
     else:
         if not args.gemini_key:
@@ -225,35 +225,35 @@ def main() -> None:
         print(f"   Gemini reply: {text.strip()}")
         print(f"   Tokens — input: {input_tokens}, output: {output_tokens}, total: {total_tokens}")
 
-    print(f"\n2) Reporting to TokenMeter at {args.token_meter_url}...")
+    print(f"\n2) Reporting to PromptPenny at {args.prompt_penny_url}...")
     try:
-        record = report_to_token_meter(
-            base_url=args.token_meter_url,
-            api_key=args.token_meter_key,
-            model=token_meter_model,
+        record = report_to_prompt_penny(
+            base_url=args.prompt_penny_url,
+            api_key=args.prompt_penny_key,
+            model=prompt_penny_model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             source=args.source,
             metadata={
                 "gemini_model": args.gemini_model,
                 "prompt_preview": args.prompt[:120],
-                "token_meter_only": args.token_meter_only,
+                "prompt_penny_only": args.prompt_penny_only,
             },
         )
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        sys.exit(f"TokenMeter error {e.code}: {body}")
+        sys.exit(f"PromptPenny error {e.code}: {body}")
     except urllib.error.URLError as e:
         sys.exit(
-            f"TokenMeter unreachable: {e.reason}\n"
-            "Ensure TokenMeter is open, Integration → Enable API Server is ON,\n"
+            f"PromptPenny unreachable: {e.reason}\n"
+            "Ensure PromptPenny is open, Integration → Enable API Server is ON,\n"
             "and your PC is on the same Wi-Fi as the phone."
         )
 
-    print("\n3) Success! TokenMeter recorded:")
+    print("\n3) Success! PromptPenny recorded:")
     print(json.dumps(record, indent=2))
     print(f"\n   Cost: ${record.get('cost_usd', 0):.6f}")
-    print("   Check Dashboard and History in the TokenMeter app.")
+    print("   Check Dashboard and History in the PromptPenny app.")
 
 
 if __name__ == "__main__":

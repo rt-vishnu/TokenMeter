@@ -1,6 +1,6 @@
 param(
-    [string]$Url = $env:TOKEN_METER_URL,
-    [string]$ApiKey = $env:TOKEN_METER_API_KEY,
+    [string]$Url = $env:PROMPT_PENNY_URL,
+    [string]$ApiKey = $env:PROMPT_PENNY_API_KEY,
     [Parameter(Mandatory = $true)][string]$Model,
     [Parameter(Mandatory = $true)][int]$InputTokens,
     [Parameter(Mandatory = $true)][int]$OutputTokens,
@@ -10,7 +10,7 @@ param(
 
 if (-not $Url) { $Url = "http://127.0.0.1:8765" }
 if (-not $ApiKey) {
-    Write-Error "Set TOKEN_METER_API_KEY environment variable or pass -ApiKey"
+    Write-Error "Set PROMPT_PENNY_API_KEY environment variable or pass -ApiKey"
     exit 1
 }
 
