@@ -1,0 +1,10 @@
+# Copy to key.properties and fill in after creating upload-keystore.jks
+# Or run: .\scripts\setup_release_signing.ps1
+#
+# Generate keystore (one-time):
+#   keytool -genkeypair -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=upload
+storeFile=../upload-keystore.jks
