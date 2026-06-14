@@ -25,22 +25,36 @@ class SettingsService {
   static const _geminiKeySecureKey = 'gemini_api_key';
   static const _openaiKeySecureKey = 'openai_api_key';
   static const _anthropicKeySecureKey = 'anthropic_api_key';
+  static const _nvidiaKeySecureKey = 'nvidia_api_key';
+  static const _kimiKeySecureKey = 'kimi_api_key';
   static const _chatProviderKey = 'chat_provider';
   static const _chatModelKey = 'chat_model';
+
+  // Billing/admin keys for actual-spend reconciliation, keyed by provider id.
+  // Extend this list as providers are added (Phase 0b: openai, anthropic).
+  static const _billingProviderIds = ['openrouter', 'openai', 'anthropic'];
 
   // Cached in memory after first load to avoid async on every read.
   String? _cachedApiKey;
   String? _cachedGeminiKey;
   String? _cachedOpenaiKey;
   String? _cachedAnthropicKey;
+  String? _cachedNvidiaKey;
+  String? _cachedKimiKey;
   String? _cachedRemoteApiKey;
+  final Map<String, String?> _cachedBillingKeys = {};
 
   /// Call once at startup to migrate legacy key and warm the cache.
   Future<void> init() async {
     _cachedGeminiKey = await _secure.read(key: _geminiKeySecureKey);
     _cachedOpenaiKey = await _secure.read(key: _openaiKeySecureKey);
     _cachedAnthropicKey = await _secure.read(key: _anthropicKeySecureKey);
+    _cachedNvidiaKey = await _secure.read(key: _nvidiaKeySecureKey);
+    _cachedKimiKey = await _secure.read(key: _kimiKeySecureKey);
     _cachedRemoteApiKey = await _secure.read(key: _remoteApiKeySecureKey);
+    for (final id in _billingProviderIds) {
+      _cachedBillingKeys[id] = await _secure.read(key: 'billing_$id');
+    }
 
     final existing = await _secure.read(key: _apiKeySecureKey);
     if (existing != null) {
@@ -94,7 +108,7 @@ class SettingsService {
     }
   }
 
-  /// API key from the phone/desktop TokenMeter instance (web client only).
+  /// API key from the phone/desktop PromptPenny instance (web client only).
   String? get remoteApiKey => _cachedRemoteApiKey;
 
   Future<void> setRemoteApiKey(String? key) async {
@@ -155,6 +169,8 @@ class SettingsService {
         'gemini' => _cachedGeminiKey,
         'openai' => _cachedOpenaiKey,
         'anthropic' => _cachedAnthropicKey,
+        'nvidia' => _cachedNvidiaKey,
+        'kimi' => _cachedKimiKey,
         _ => null,
       };
 
@@ -163,6 +179,8 @@ class SettingsService {
       'gemini' => _geminiKeySecureKey,
       'openai' => _openaiKeySecureKey,
       'anthropic' => _anthropicKeySecureKey,
+      'nvidia' => _nvidiaKeySecureKey,
+      'kimi' => _kimiKeySecureKey,
       _ => null,
     };
     if (secureKey == null) return;
@@ -180,6 +198,10 @@ class SettingsService {
         _cachedOpenaiKey = trimmed?.isEmpty ?? true ? null : trimmed;
       case 'anthropic':
         _cachedAnthropicKey = trimmed?.isEmpty ?? true ? null : trimmed;
+      case 'nvidia':
+        _cachedNvidiaKey = trimmed?.isEmpty ?? true ? null : trimmed;
+      case 'kimi':
+        _cachedKimiKey = trimmed?.isEmpty ?? true ? null : trimmed;
     }
   }
 
@@ -198,6 +220,36 @@ class SettingsService {
 
   Future<void> setBudgetNotifyLevel(String key, int level) =>
       _prefs.setInt('notif_$key', level);
+
+  // ── Billing keys (actual-spend reconciliation) ────────────────────────────
+
+  String? billingApiKey(String providerId) => _cachedBillingKeys[providerId];
+
+  Future<void> setBillingApiKey(String providerId, String? value) async {
+    final secureKey = 'billing_$providerId';
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      await _secure.delete(key: secureKey);
+      _cachedBillingKeys[providerId] = null;
+    } else {
+      await _secure.write(key: secureKey, value: trimmed);
+      _cachedBillingKeys[providerId] = trimmed;
+    }
+  }
+
+  // ── Billing actuals cache (offline snapshot of last successful fetch) ────────
+
+  String? billingActualsCacheRaw(String providerId) =>
+      _prefs.getString('billing_cache_$providerId');
+
+  Future<void> setBillingActualsCacheRaw(
+      String providerId, String? value) async {
+    if (value == null) {
+      await _prefs.remove('billing_cache_$providerId');
+    } else {
+      await _prefs.setString('billing_cache_$providerId', value);
+    }
+  }
 
   /// Selected chat provider id (gemini/openai/anthropic).
   String get chatProvider => _prefs.getString(_chatProviderKey) ?? 'gemini';

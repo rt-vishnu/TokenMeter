@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:token_meter/core/models/usage_payload.dart';
+import 'package:prompt_penny/core/models/usage_payload.dart';
 
 void main() {
   test('UsagePayload.fromJson parses required fields', () {

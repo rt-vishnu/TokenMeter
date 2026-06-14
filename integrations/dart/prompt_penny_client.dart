@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-/// Lightweight client for reporting token usage to TokenMeter.
-class TokenMeterClient {
-  TokenMeterClient({
+/// Lightweight client for reporting token usage to PromptPenny.
+class PromptPennyClient {
+  PromptPennyClient({
     required this.baseUrl,
     required this.apiKey,
     http.Client? httpClient,
@@ -46,7 +46,7 @@ class TokenMeterClient {
     );
 
     if (response.statusCode != 200) {
-      throw TokenMeterException(
+      throw PromptPennyException(
         'Failed to report usage: ${response.statusCode} ${response.body}',
       );
     }
@@ -77,7 +77,7 @@ class TokenMeterClient {
     );
 
     if (response.statusCode != 200) {
-      throw TokenMeterException(
+      throw PromptPennyException(
         'Failed to estimate: ${response.statusCode} ${response.body}',
       );
     }
@@ -95,10 +95,10 @@ class TokenMeterClient {
   }
 }
 
-class TokenMeterException implements Exception {
-  TokenMeterException(this.message);
+class PromptPennyException implements Exception {
+  PromptPennyException(this.message);
   final String message;
 
   @override
-  String toString() => 'TokenMeterException: $message';
+  String toString() => 'PromptPennyException: $message';
 }

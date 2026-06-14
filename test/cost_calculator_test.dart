@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:token_meter/core/models/model_pricing.dart';
-import 'package:token_meter/core/services/cost_calculator.dart';
+import 'package:prompt_penny/core/models/model_pricing.dart';
+import 'package:prompt_penny/core/services/cost_calculator.dart';
 
 void main() {
   const gpt4o = ModelPricing(

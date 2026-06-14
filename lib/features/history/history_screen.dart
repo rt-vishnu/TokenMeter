@@ -61,7 +61,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
-      final file = File('${dir.path}/tokenmeter_export_$ts.csv');
+      final file = File('${dir.path}/promptpenny_export_$ts.csv');
       await file.writeAsString(csv);
       if (!context.mounted) return;
       messenger.showSnackBar(

@@ -6,8 +6,8 @@ import 'core/constants/app_constants.dart';
 import 'core/providers/app_providers.dart';
 import 'core/routing/app_router.dart';
 
-class TokenMeterApp extends ConsumerWidget {
-  const TokenMeterApp({super.key});
+class PromptPennyApp extends ConsumerWidget {
+  const PromptPennyApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

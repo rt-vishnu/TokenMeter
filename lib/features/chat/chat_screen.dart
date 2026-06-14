@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -469,13 +470,29 @@ class _ModelSelector extends StatelessWidget {
 
 // ── Message bubble ───────────────────────────────────────────────────────────
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends StatefulWidget {
   const _MessageBubble({required this.message});
 
   final _ChatMessage message;
 
   @override
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<_MessageBubble> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.message.text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final scheme = Theme.of(context).colorScheme;
     final bg = message.isError
         ? scheme.errorContainer
@@ -511,17 +528,38 @@ class _MessageBubble extends StatelessWidget {
               SelectableText(message.text)
             else
               _MarkdownReply(text: message.text),
-            if (message.cost != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                '${Formatters.tokens(message.inputTokens!)} in · '
-                '${Formatters.tokens(message.outputTokens!)} out · '
-                '${Formatters.currency(message.cost!)}',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (message.cost != null) ...[
+                  Expanded(
+                    child: Text(
+                      '${Formatters.tokens(message.inputTokens!)} in · '
+                      '${Formatters.tokens(message.outputTokens!)} out · '
+                      '${Formatters.currency(message.cost!)}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
                     ),
-              ),
-            ],
+                  ),
+                ] else
+                  const Spacer(),
+                GestureDetector(
+                  onTap: _copy,
+                  child: Tooltip(
+                    message: 'Copy',
+                    child: Icon(
+                      _copied ? Icons.check_rounded : Icons.copy_outlined,
+                      size: 14,
+                      color: _copied
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

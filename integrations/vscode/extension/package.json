@@ -1,7 +1,7 @@
 {
-  "name": "tokenmeter-vscode",
-  "displayName": "TokenMeter",
-  "description": "Automatically track AI token usage and costs in TokenMeter",
+  "name": "promptpenny-vscode",
+  "displayName": "PromptPenny",
+  "description": "Automatically track AI token usage and costs in PromptPenny",
   "version": "1.0.0",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
@@ -9,42 +9,42 @@
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
-      "title": "TokenMeter",
+      "title": "PromptPenny",
       "properties": {
-        "tokenmeter.url": {
+        "promptpenny.url": {
           "type": "string",
           "default": "http://127.0.0.1:8765",
-          "description": "TokenMeter API server URL (from Integration screen)"
+          "description": "PromptPenny API server URL (from Integration screen)"
         },
-        "tokenmeter.apiKey": {
+        "promptpenny.apiKey": {
           "type": "string",
           "default": "",
-          "description": "TokenMeter API key (from Integration screen)"
+          "description": "PromptPenny API key (from Integration screen)"
         },
-        "tokenmeter.enabled": {
+        "promptpenny.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable automatic token tracking"
         },
-        "tokenmeter.source": {
+        "promptpenny.source": {
           "type": "string",
           "default": "vscode",
-          "description": "Source label shown in TokenMeter (e.g. vscode, copilot)"
+          "description": "Source label shown in PromptPenny (e.g. vscode, copilot)"
         }
       }
     },
     "commands": [
       {
-        "command": "tokenmeter.showStatus",
-        "title": "TokenMeter: Show Status"
+        "command": "promptpenny.showStatus",
+        "title": "PromptPenny: Show Status"
       },
       {
-        "command": "tokenmeter.testConnection",
-        "title": "TokenMeter: Test Connection"
+        "command": "promptpenny.testConnection",
+        "title": "PromptPenny: Test Connection"
       },
       {
-        "command": "tokenmeter.openSettings",
-        "title": "TokenMeter: Open Settings"
+        "command": "promptpenny.openSettings",
+        "title": "PromptPenny: Open Settings"
       }
     ]
   },

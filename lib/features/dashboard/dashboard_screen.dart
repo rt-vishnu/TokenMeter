@@ -47,6 +47,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           onSelectionChanged: (s) => setState(() => _periodIndex = s.first),
         ),
         const SizedBox(height: 16),
+        const _BalancesEntryCard(),
+        const SizedBox(height: 4),
         if (recordsAsync.isLoading && recordsAsync.valueOrNull == null)
           const Center(child: CircularProgressIndicator())
         else if (stats.recordCount == 0)
@@ -97,6 +99,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const SizedBox(height: 16),
         ],
       ],
+    );
+  }
+}
+
+// ── Balances entry ────────────────────────────────────────────────────────────
+
+class _BalancesEntryCard extends StatelessWidget {
+  const _BalancesEntryCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: scheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(Icons.account_balance_wallet_outlined,
+              color: scheme.onTertiaryContainer, size: 22),
+        ),
+        title: const Text('Provider balances'),
+        subtitle: const Text('See real spend from your provider'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => context.push('/balances'),
+      ),
     );
   }
 }

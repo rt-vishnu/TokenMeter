@@ -76,6 +76,6 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap>
     ref.listen<BudgetStatus>(budgetStatusProvider, (_, next) {
       ref.read(budgetAlertServiceProvider).evaluate(next);
     });
-    return const TokenMeterApp();
+    return const PromptPennyApp();
   }
 }
