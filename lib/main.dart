@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
@@ -8,19 +7,19 @@ import 'core/providers/app_providers.dart';
 import 'core/providers/app_providers_common.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/pricing_repository.dart';
+import 'core/services/secure_storage_config.dart';
 import 'core/services/settings_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final prefs = await SharedPreferences.getInstance();
-  const secure = FlutterSecureStorage();
   final pricing = PricingRepository(prefs);
   await pricing.load();
 
   // Init settings on the single shared instance so the API key cache is warm
   // before the provider is read anywhere in the widget tree.
-  final settings = SettingsService(prefs, secure);
+  final settings = SettingsService(prefs, appSecureStorage);
   await settings.init();
 
   final notifications = NotificationService();

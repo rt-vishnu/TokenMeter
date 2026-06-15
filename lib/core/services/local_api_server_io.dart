@@ -27,7 +27,7 @@ class LocalApiServer {
 
   HttpServer? _server;
   String? _boundAddress;
-  final _requestTimestamps = <DateTime>[];
+  final _requestTimestampsByClient = <String, List<DateTime>>{};
   final _tls = TlsCertificateService();
 
   static const portFallbackCount = 4;
@@ -322,8 +322,8 @@ class LocalApiServer {
     return diff == 0;
   }
 
-  // Public paths that do not require an API key.
-  static const _publicPaths = {'api/v1/health', 'api/v1/info', 'api/v1/models'};
+  // Only health checks are public; all other routes require the API key.
+  static const _publicPaths = {'api/v1/health'};
 
   Middleware get _authMiddleware => (Handler innerHandler) {
         return (Request request) async {
@@ -372,20 +372,35 @@ class LocalApiServer {
   Middleware get _rateLimitMiddleware => (Handler innerHandler) {
         return (Request request) async {
           final now = DateTime.now();
-          _requestTimestamps.removeWhere(
+          final clientId = _clientId(request);
+          final timestamps =
+              _requestTimestampsByClient.putIfAbsent(clientId, () => []);
+          timestamps.removeWhere(
             (t) => now.difference(t).inMinutes >= 1,
           );
-          if (_requestTimestamps.length >= AppConstants.rateLimitPerMinute) {
+          if (timestamps.length >= AppConstants.rateLimitPerMinute) {
             return Response(
               429,
               body: jsonEncode({'error': 'Rate limit exceeded'}),
               headers: _jsonHeaders,
             );
           }
-          _requestTimestamps.add(now);
+          timestamps.add(now);
           return innerHandler(request);
         };
       };
+
+  static String _clientId(Request request) {
+    final info = request.context['shelf.io.connection_info'];
+    if (info is HttpConnectionInfo) {
+      return info.remoteAddress.address;
+    }
+    final forwarded = request.headers['x-forwarded-for'];
+    if (forwarded != null && forwarded.isNotEmpty) {
+      return forwarded.split(',').first.trim();
+    }
+    return 'unknown';
+  }
 
   static const _jsonHeaders = {'Content-Type': 'application/json'};
   // Origin header is set dynamically in _corsMiddleware for localhost only.

@@ -9,7 +9,7 @@ function cfg() {
 }
 
 function getUrl(): string {
-  return (cfg().get<string>('url') ?? 'http://127.0.0.1:8765').replace(/\/$/, '');
+  return (cfg().get<string>('url') ?? 'https://127.0.0.1:8765').replace(/\/$/, '');
 }
 
 function getApiKey(): string {

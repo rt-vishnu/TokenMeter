@@ -640,7 +640,8 @@ class _ProviderBar extends StatelessWidget {
                 border: OutlineInputBorder(),
               ),
               items: [
-                for (final p in LlmProvider.values)
+                for (final p in LlmProvider.values
+                    .where((p) => !kIsWeb || p.isSupportedOnWeb))
                   DropdownMenuItem(value: p, child: Text(p.displayName)),
               ],
               onChanged: (p) {

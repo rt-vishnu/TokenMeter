@@ -6,7 +6,7 @@ import json
 import os
 import urllib.request
 
-DEFAULT_URL = "http://127.0.0.1:8765"
+DEFAULT_URL = "https://127.0.0.1:8765"
 
 
 def report_usage(

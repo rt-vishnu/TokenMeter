@@ -29,7 +29,7 @@ _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 
 # Use a current model id — bare "gemini-1.5-flash" and "gemini-2.0-flash" are retired.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_PROMPT_PENNY_URL = "http://127.0.0.1:8765"
+DEFAULT_PROMPT_PENNY_URL = "https://127.0.0.1:8765"
 DEFAULT_PROMPT = "Reply with exactly one short sentence about token usage tracking."
 
 

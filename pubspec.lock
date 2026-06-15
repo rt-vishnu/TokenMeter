@@ -205,18 +205,18 @@ packages:
     dependency: "direct main"
     description:
       name: drift
-      sha256: "8033500116b24398fba0cca0369cc31678cd627c01e41753a61186911cea743e"
+      sha256: "6cc0b623c0e83f7080524d8396e9301b1d78b9c66a4fdceeb0f798211303254c"
       url: "https://pub.dev"
     source: hosted
-    version: "2.33.0"
+    version: "2.34.0"
   drift_dev:
     dependency: "direct dev"
     description:
       name: drift_dev
-      sha256: b3dd5b75e30522a91da8abda9f5bb17230cb038097f6d15fa75d42bb563428aa
+      sha256: "9cfff1576b49725da0d32c040651a41ae195e8c4af8d8da301593e41d7abc2f7"
       url: "https://pub.dev"
     source: hosted
-    version: "2.33.0"
+    version: "2.34.0"
   equatable:
     dependency: transitive
     description:
@@ -416,14 +416,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "14.8.1"
-  google_fonts:
-    dependency: "direct main"
-    description:
-      name: google_fonts
-      sha256: ba03d03bcaa2f6cb7bd920e3b5027181db75ab524f8891c8bc3aa603885b8055
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.3.3"
   graphs:
     dependency: transitive
     description:
@@ -990,7 +982,7 @@ packages:
     source: hosted
     version: "1.10.2"
   sqlite3:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: sqlite3
       sha256: "9488c7d2cdb1091c91cacf7e207cff81b28bff8e366f042bad3afe7d34afe189"

@@ -21,6 +21,13 @@ class UsagePayload {
 
   static const _maxTokens = 2000000;
   static const _maxMetadataBytes = 4096;
+  static const _maxMetadataValueLength = 500;
+  static const _allowedMetadataKeys = {
+    'prompt_preview',
+    'session_label',
+    'tool',
+    'note',
+  };
   static const _maxSourceLength = 50;
   static const _maxSessionIdLength = 100;
   static const _maxModelLength = 100;
@@ -89,6 +96,24 @@ class UsagePayload {
     if (metadataSize > _maxMetadataBytes) {
       throw ArgumentError(
           'metadata must not exceed $_maxMetadataBytes bytes (got $metadataSize bytes)');
+    }
+    _validateMetadataKeys();
+  }
+
+  void _validateMetadataKeys() {
+    for (final entry in metadata.entries) {
+      if (!_allowedMetadataKeys.contains(entry.key)) {
+        throw ArgumentError('metadata key "${entry.key}" is not allowed');
+      }
+      final value = entry.value;
+      if (value is! String && value is! num && value is! bool) {
+        throw ArgumentError(
+            'metadata values must be strings, numbers, or booleans');
+      }
+      if (value is String && value.length > _maxMetadataValueLength) {
+        throw ArgumentError(
+            'metadata string values must not exceed $_maxMetadataValueLength characters');
+      }
     }
   }
 
