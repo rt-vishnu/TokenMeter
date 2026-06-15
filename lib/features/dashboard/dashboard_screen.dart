@@ -95,7 +95,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Text('Activity Heatmap — ${_periods[_periodIndex].$1}',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          _ActivityHeatmap(grid: heatmap),
+          _ActivityHeatmap(grid: heatmap, period: period),
           const SizedBox(height: 16),
         ],
       ],
@@ -1008,15 +1008,17 @@ class _SourceBreakdown extends StatelessWidget {
 // ── Activity heatmap ──────────────────────────────────────────────────────────
 
 class _ActivityHeatmap extends StatelessWidget {
-  const _ActivityHeatmap({required this.grid});
+  const _ActivityHeatmap({required this.grid, required this.period});
   final List<List<double>> grid;
+  final DashboardPeriod period;
 
   static const _shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  /// Builds row labels: a 1-row grid (Today) shows "Today"; up to a week
-  /// uses Mon–Sun names; longer (month) uses M/d to avoid repeating weekdays.
+  /// Builds row labels: the Today period always shows "Today"; week/month
+  /// periods always show the real weekday name (or M/d for month) so that
+  /// viewing "This Week" on a Monday doesn't look identical to "Today".
   String _rowLabel(int rowIndex, int totalRows) {
-    if (totalRows == 1) return 'Today';
+    if (period == DashboardPeriod.today) return 'Today';
     // Row 0 = oldest day, row (totalRows-1) = today.
     final today = DateTime.now();
     final date = today.subtract(Duration(days: totalRows - 1 - rowIndex));

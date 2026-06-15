@@ -27,6 +27,8 @@ class _ChatMessage {
     this.outputTokens,
     this.cost,
     this.isError = false,
+    this.model,
+    this.interrupted = false,
   });
 
   final bool isUser;
@@ -35,12 +37,18 @@ class _ChatMessage {
   final int? outputTokens;
   final double? cost;
   final bool isError;
+  /// Model that produced an assistant reply, included in abuse reports.
+  final String? model;
+  /// A reply that failed or was cut off mid-stream — offers a retry, and is
+  /// excluded from the context sent on later turns.
+  final bool interrupted;
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
+  final _flaggedIndices = <int>{};
   bool _sending = false;
   double _sessionCost = 0;
   // Partial assistant reply while a streamed response is in flight.
@@ -87,6 +95,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .toList();
   }
 
+  // Only the most recent messages are sent as context. This keeps each request
+  // fast and bounded no matter how long the session runs — otherwise input
+  // tokens (and latency) grow every turn and heavier models start timing out.
+  static const _maxHistoryMessages = 16;
+
+  /// Recent, complete turns to send as context — errors and interrupted
+  /// (partial) replies are excluded, then the tail is windowed.
+  List<ChatTurn> _buildHistory() {
+    final valid =
+        _messages.where((m) => !m.isError && !m.interrupted).toList();
+    final start = valid.length > _maxHistoryMessages
+        ? valid.length - _maxHistoryMessages
+        : 0;
+    return [
+      for (final m in valid.sublist(start))
+        ChatTurn(isUser: m.isUser, text: m.text),
+    ];
+  }
+
   Future<void> _send() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
@@ -111,11 +138,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _inputController.clear();
     _scrollToBottom();
 
-    final history = [
-      for (final m in _messages.where((m) => !m.isError))
-        ChatTurn(isUser: m.isUser, text: m.text),
-    ];
+    await _runCompletion(provider, model, pricing);
+  }
 
+  /// Re-asks the latest question after a failed/interrupted reply, without
+  /// duplicating the user's message.
+  Future<void> _retry() async {
+    if (_sending) return;
+    final settings = ref.read(settingsServiceProvider);
+    final pricing = ref.read(pricingRepositoryProvider);
+    final provider = LlmProvider.fromId(settings.chatProvider);
+    final model = _currentModel(settings, pricing, provider);
+    if (model.isEmpty || settings.chatApiKey(provider.id) == null) return;
+
+    setState(() {
+      // Drop the trailing failed/interrupted assistant reply so we re-ask from
+      // the last user turn.
+      while (_messages.isNotEmpty && !_messages.last.isUser) {
+        _messages.removeLast();
+      }
+      _sending = true;
+    });
+    _scrollToBottom();
+
+    await _runCompletion(provider, model, pricing);
+  }
+
+  Future<void> _runCompletion(
+    LlmProvider provider,
+    String model,
+    PricingRepository pricing,
+  ) async {
+    final settings = ref.read(settingsServiceProvider);
+    final promptForUsage =
+        _messages.lastWhere((m) => m.isUser, orElse: () => _empty).text;
     final client = LlmClient.forProvider(
       provider,
       apiKey: settings.chatApiKey(provider.id) ?? '',
@@ -124,7 +180,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     try {
       final reply = await client.complete(
         model: model,
-        history: history,
+        history: _buildHistory(),
         onDelta: (delta) {
           if (!mounted) return;
           setState(() => _streamingText += delta);
@@ -146,7 +202,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               source: 'chat',
               metadata: {
                 'provider': provider.id,
-                'prompt_preview': text.substring(0, text.length.clamp(0, 120)),
+                'prompt_preview': promptForUsage.substring(
+                    0, promptForUsage.length.clamp(0, 120)),
               },
             ),
           );
@@ -159,32 +216,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           inputTokens: reply.inputTokens,
           outputTokens: reply.outputTokens,
           cost: cost,
+          model: model,
         ));
         _sessionCost += cost;
         _streamingText = '';
         _sending = false;
       });
     } on LlmException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(_ChatMessage(isUser: false, text: e.message, isError: true));
-        _streamingText = '';
-        _sending = false;
-      });
+      _handleFailure(e.message);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(_ChatMessage(
-          isUser: false,
-          text: 'Something went wrong: $e',
-          isError: true,
-        ));
-        _streamingText = '';
-        _sending = false;
-      });
+      _handleFailure('Something went wrong: $e');
     }
     _scrollToBottom();
   }
+
+  /// Keeps any text that already streamed in (marked interrupted, with retry)
+  /// instead of discarding it; otherwise shows a concise, retryable error.
+  void _handleFailure(String message) {
+    if (!mounted) return;
+    setState(() {
+      final partial = _streamingText.trim();
+      if (partial.isNotEmpty) {
+        _messages.add(_ChatMessage(
+          isUser: false,
+          text: partial,
+          interrupted: true,
+        ));
+      } else {
+        _messages.add(_ChatMessage(
+          isUser: false,
+          text: message,
+          isError: true,
+          interrupted: true,
+        ));
+      }
+      _streamingText = '';
+      _sending = false;
+    });
+  }
+
+  static const _empty = _ChatMessage(isUser: true, text: '');
 
   String _currentModel(
     SettingsService settings,
@@ -199,6 +270,82 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Where abuse reports for AI responses are sent.
+  static const _reportEmail = 'ravi.vishnubhotla123@gmail.com';
+
+  /// Reports an AI response as inappropriate. Confirms with the user (with an
+  /// optional reason), then opens their email app pre-filled with the response
+  /// so it can be reviewed. Satisfies the Generative AI content-reporting
+  /// requirement for an app with no backend.
+  Future<void> _reportResponse(int index) async {
+    final msg = _messages[index];
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report this response?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This opens your email app with the flagged response so it can be '
+              'reviewed. Nothing is sent until you press send.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Report'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final reason = reasonController.text.trim();
+    final body = StringBuffer()
+      ..writeln('I am reporting the following AI-generated response as '
+          'inappropriate.')
+      ..writeln()
+      ..writeln('Reason: ${reason.isEmpty ? '(not provided)' : reason}')
+      ..writeln('Model: ${msg.model ?? 'unknown'}')
+      ..writeln()
+      ..writeln('--- Response ---')
+      ..writeln(msg.text);
+    final uri = Uri.parse(
+      'mailto:$_reportEmail'
+      '?subject=${Uri.encodeComponent('PromptPenny — Reported AI response')}'
+      '&body=${Uri.encodeComponent(body.toString())}',
+    );
+
+    var launched = false;
+    try {
+      launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      launched = false;
+    }
+    if (!mounted) return;
+    setState(() => _flaggedIndices.add(index));
+    _showSnack(launched
+        ? 'Thanks for reporting — your email app is ready to send.'
+        : 'Marked as reported. No email app found — contact $_reportEmail.');
   }
 
   Future<void> _changeProvider(LlmProvider provider) async {
@@ -261,9 +408,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     isUser: false,
                                     text: _streamingText,
                                   ),
+                                  isFlagged: false,
+                                  onFlag: null,
+                                  onRetry: null,
                                 );
                         }
-                        return _MessageBubble(message: _messages[index]);
+                        final msg = _messages[index];
+                        // Retry only the latest failed/interrupted reply.
+                        final canRetry = msg.interrupted &&
+                            !_sending &&
+                            index == _messages.length - 1;
+                        return _MessageBubble(
+                          message: msg,
+                          isFlagged: _flaggedIndices.contains(index),
+                          onFlag: (!msg.isUser && !msg.isError)
+                              ? () => _reportResponse(index)
+                              : null,
+                          onRetry: canRetry ? _retry : null,
+                        );
                       },
                     ),
         ),
@@ -471,9 +633,17 @@ class _ModelSelector extends StatelessWidget {
 // ── Message bubble ───────────────────────────────────────────────────────────
 
 class _MessageBubble extends StatefulWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    required this.isFlagged,
+    required this.onFlag,
+    this.onRetry,
+  });
 
   final _ChatMessage message;
+  final bool isFlagged;
+  final VoidCallback? onFlag;
+  final VoidCallback? onRetry;
 
   @override
   State<_MessageBubble> createState() => _MessageBubbleState();
@@ -528,6 +698,37 @@ class _MessageBubbleState extends State<_MessageBubble> {
               SelectableText(message.text)
             else
               _MarkdownReply(text: message.text),
+            if (message.interrupted && !message.isError) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 13, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Response was interrupted',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+            if (widget.onRetry != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: widget.onRetry,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -558,6 +759,22 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     ),
                   ),
                 ),
+                if (widget.onFlag != null) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: widget.onFlag,
+                    child: Tooltip(
+                      message: widget.isFlagged ? 'Reported' : 'Report response',
+                      child: Icon(
+                        widget.isFlagged ? Icons.flag : Icons.flag_outlined,
+                        size: 14,
+                        color: widget.isFlagged
+                            ? scheme.error
+                            : scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
