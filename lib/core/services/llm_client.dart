@@ -119,6 +119,13 @@ abstract class LlmClient {
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
+// Shown when a request runs past its timeout — distinct from a connectivity
+// failure. Heavier models (or a long conversation history) can take a while to
+// start responding, so this points the user at the real fix.
+const _timeoutMessage =
+    'The request timed out — the model took too long to respond. '
+    'Try again, or pick a lighter/faster model.';
+
 Future<http.Response> _post(
   Uri uri,
   Map<String, String> headers,
@@ -127,7 +134,9 @@ Future<http.Response> _post(
   try {
     return await http
         .post(uri, headers: headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 120));
+  } on TimeoutException {
+    throw const LlmException(_timeoutMessage);
   } catch (_) {
     throw const LlmException(
         'Network error — check your internet connection.');
@@ -145,7 +154,12 @@ Future<http.StreamedResponse> _postStream(
     ..headers.addAll(headers)
     ..body = jsonEncode(body);
   try {
-    return await client.send(request).timeout(const Duration(seconds: 30));
+    // Time to first response headers. Generous, because a heavier model with a
+    // large prompt can be slow to start streaming; the per-event stall timeout
+    // in _sseDataLines guards against a silent connection after that.
+    return await client.send(request).timeout(const Duration(seconds: 90));
+  } on TimeoutException {
+    throw const LlmException(_timeoutMessage);
   } catch (_) {
     throw const LlmException(
         'Network error — check your internet connection.');
