@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_constants.dart';
 import 'core/providers/app_providers.dart';
 import 'core/routing/app_router.dart';
+import 'core/theme/app_warning_theme.dart';
 
 class PromptPennyApp extends ConsumerWidget {
   const PromptPennyApp({super.key});
@@ -47,6 +48,9 @@ class PromptPennyApp extends ConsumerWidget {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
+      extensions: [
+        isDark ? AppWarningTheme.dark() : AppWarningTheme.light(),
+      ],
       textTheme: textTheme,
       scaffoldBackgroundColor:
           isDark ? const Color(0xFF101613) : const Color(0xFFF7FAF8),

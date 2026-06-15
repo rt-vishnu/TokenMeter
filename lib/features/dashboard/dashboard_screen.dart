@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_providers_common.dart';
+import '../../core/theme/app_warning_theme.dart';
 import '../../core/utils/formatters.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -169,12 +170,11 @@ class _BudgetAlertBanners extends StatelessWidget {
     void addBanner(String period, double spend, double? limit, AlertLevel level) {
       if (level == AlertLevel.ok) return;
       final isExceeded = level == AlertLevel.exceeded;
-      final color = isExceeded
-          ? Theme.of(context).colorScheme.errorContainer
-          : const Color(0xFFFFF3CD);
-      final textColor = isExceeded
-          ? Theme.of(context).colorScheme.onErrorContainer
-          : const Color(0xFF664D03);
+      final scheme = Theme.of(context).colorScheme;
+      final warning = AppWarningTheme.of(context);
+      final color = isExceeded ? scheme.errorContainer : warning.container;
+      final textColor =
+          isExceeded ? scheme.onErrorContainer : warning.onContainer;
       banners.add(
         Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -232,24 +232,29 @@ class _WeeklyRecapCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final pct = recap.percentChange;
 
-    final String emoji;
+    final IconData trendIcon;
+    final Color trendColor;
     final String headline;
     final Color tint;
     if (!recap.hasComparison) {
-      emoji = '📊';
+      trendIcon = Icons.bar_chart_rounded;
+      trendColor = scheme.onSecondaryContainer;
       headline = 'Your first week of tracking — nice start!';
       tint = scheme.secondaryContainer;
     } else if (recap.isDown) {
-      emoji = '📉';
+      trendIcon = Icons.trending_down_rounded;
+      trendColor = scheme.onPrimaryContainer;
       headline =
           '${pct!.abs().toStringAsFixed(0)}% less than last week — great job!';
       tint = scheme.primaryContainer;
     } else if (pct! > 0) {
-      emoji = '📈';
+      trendIcon = Icons.trending_up_rounded;
+      trendColor = AppWarningTheme.of(context).onContainer;
       headline = '${pct.toStringAsFixed(0)}% more than last week';
-      tint = const Color(0xFFFFF3CD);
+      tint = AppWarningTheme.of(context).container;
     } else {
-      emoji = '➖';
+      trendIcon = Icons.trending_flat_rounded;
+      trendColor = scheme.onSecondaryContainer;
       headline = 'About the same as last week';
       tint = scheme.secondaryContainer;
     }
@@ -262,7 +267,7 @@ class _WeeklyRecapCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 30)),
+              Icon(trendIcon, size: 30, color: trendColor),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -312,7 +317,7 @@ class _BudgetProgressBars extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 16),
         child: Card(
           child: ListTile(
-            leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+            leading: const Icon(Icons.savings_outlined),
             title: const Text('Set a budget goal'),
             subtitle: const Text('Track spending against a daily or monthly limit.'),
             trailing: const Icon(Icons.chevron_right),
@@ -325,10 +330,12 @@ class _BudgetProgressBars extends StatelessWidget {
     final worst = goals
         .map((g) => g.level)
         .reduce((a, b) => a.index >= b.index ? a : b);
-    final (String chipEmoji, String chipText, Color chipColor) = switch (worst) {
-      AlertLevel.ok => ('🎯', 'On track', Colors.green.shade600),
-      AlertLevel.warning => ('⚠️', 'Getting close', Colors.amber.shade700),
-      AlertLevel.exceeded => ('🚨', 'Over budget', Theme.of(context).colorScheme.error),
+    final scheme = Theme.of(context).colorScheme;
+    final warning = AppWarningTheme.of(context);
+    final (IconData chipIcon, String chipText, Color chipColor) = switch (worst) {
+      AlertLevel.ok => (Icons.check_circle_outline, 'On track', scheme.primary),
+      AlertLevel.warning => (Icons.warning_amber_rounded, 'Getting close', warning.color),
+      AlertLevel.exceeded => (Icons.error_outline, 'Over budget', scheme.error),
     };
 
     return Padding(
@@ -350,12 +357,19 @@ class _BudgetProgressBars extends StatelessWidget {
                       color: chipColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '$chipEmoji $chipText',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: chipColor,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(chipIcon, size: 14, color: chipColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          chipText,
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                color: chipColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -392,10 +406,11 @@ class _BudgetGoalRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratio = (spend / limit).clamp(0.0, 1.0);
-    final (Color barColor, String status) = switch (level) {
-      AlertLevel.ok => (Colors.green.shade600, '✅'),
-      AlertLevel.warning => (Colors.amber.shade700, '⚠️'),
-      AlertLevel.exceeded => (Theme.of(context).colorScheme.error, '🚨'),
+    final scheme = Theme.of(context).colorScheme;
+    final (Color barColor, IconData statusIcon, Color statusColor) = switch (level) {
+      AlertLevel.ok => (scheme.primary, Icons.check_circle_outline, scheme.primary),
+      AlertLevel.warning => (AppWarningTheme.of(context).color, Icons.warning_amber_rounded, AppWarningTheme.of(context).color),
+      AlertLevel.exceeded => (scheme.error, Icons.error_outline, scheme.error),
     };
 
     return Padding(
@@ -405,7 +420,9 @@ class _BudgetGoalRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('$status  $label',
+              Icon(statusIcon, size: 16, color: statusColor),
+              const SizedBox(width: 6),
+              Text(label,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       )),
