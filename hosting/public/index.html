@@ -80,7 +80,7 @@
   <main>
     <header>
       <h1>PromptPenny — Privacy Policy</h1>
-      <p class="updated"><em>Last updated: 2026-06-14</em></p>
+      <p class="updated"><em>Last updated: 2026-06-15</em></p>
     </header>
 
     <p>PromptPenny is designed to be <strong>local-first</strong>. Your usage data, costs, history, and API keys live on your own device. We do not operate any servers that receive your data, and we do not collect analytics, telemetry, or tracking information.</p>
@@ -92,7 +92,7 @@
     <ul>
       <li><strong>No PromptPenny servers.</strong> There is no backend that your data is sent to.</li>
       <li><strong>No analytics or tracking.</strong> The app contains no analytics SDKs, crash reporters, advertising IDs, or telemetry.</li>
-      <li><strong>Your data stays on your device</strong> in local storage.</li>
+      <li><strong>Your data stays on your device</strong> in encrypted local storage (native apps).</li>
       <li><strong>Your API keys</strong> are stored in your operating system's secure storage and are sent only to the AI provider you choose.</li>
       <li>Data leaves your device <strong>only</strong> when you: chat with a provider, sync provider balances, or connect to your own local API server.</li>
     </ul>
@@ -102,15 +102,17 @@
     <h2>What data PromptPenny stores</h2>
     <p>All of the following is stored <strong>locally on your device only</strong>:</p>
     <ul>
-      <li><strong>Usage records</strong> — model name, input/output token counts, computed cost, source label, timestamp, and optional metadata. Metadata may include a short preview of a prompt (for example, the first ~120 characters of a chat message) to help you identify a record.</li>
+      <li><strong>Usage records</strong> — model name, input/output token counts, computed cost, source label, timestamp, and optional metadata.</li>
+      <li><strong>Full chat history</strong> — conversation messages saved locally so sessions can be restored.</li>
       <li><strong>Settings</strong> — theme, currency, budgets, API port, and HTTPS preference.</li>
       <li><strong>API keys</strong> — for chat providers and (optionally) provider billing.</li>
       <li><strong>A locally generated server API key</strong> and <strong>self-signed TLS certificate</strong> used by the local API server feature.</li>
     </ul>
     <p>This data is stored in:</p>
     <ul>
-      <li>A local database file on the device (usage history).</li>
-      <li>The operating system's <strong>secure storage</strong> for secrets — Keychain (iOS/macOS), Keystore (Android), or DPAPI-protected storage (Windows). API keys and the TLS private key are kept here.</li>
+      <li>An <strong>encrypted</strong> local database (usage history and chat) on native apps.</li>
+      <li>The operating system's <strong>secure storage</strong> for secrets — Keychain (iOS/macOS), Keystore (Android), or DPAPI-protected storage (Windows).</li>
+      <li><strong>On the web app</strong>, secrets use browser local storage (less protected). Anthropic chat is not available on web.</li>
     </ul>
     <p>PromptPenny does not transmit this data to us or to any third party except as described below.</p>
 
@@ -134,7 +136,8 @@
     <ul>
       <li>Usage data travels over your <strong>local network</strong> between your devices.</li>
       <li>By default the connection is encrypted with <strong>HTTPS</strong> using a self-signed certificate generated on your device; clients verify it by certificate fingerprint.</li>
-      <li>Requests require the server <strong>API key</strong> for authentication, and the server applies basic rate limiting.</li>
+      <li>Requests require the server <strong>API key</strong> for authentication, and the server applies per-client rate limiting.</li>
+      <li>Pairing QR/link contains endpoint and certificate fingerprint only — <strong>not</strong> your API key.</li>
     </ul>
     <p>No data from the API server is sent to PromptPenny or any third party — it stays between the devices you connect.</p>
 
@@ -177,9 +180,12 @@
 
     <h2>Security</h2>
     <ul>
-      <li>Secrets (API keys, the TLS private key) are stored in OS-provided secure storage rather than plain files.</li>
+      <li>Secrets are stored in OS-provided secure storage.</li>
+      <li>Usage and chat data are stored in an <strong>encrypted</strong> SQLite database on native apps.</li>
       <li>The local API server defaults to HTTPS and requires an API key.</li>
-      <li>Because the server uses a self-signed certificate for private-network use, PromptPenny's own clients pin its fingerprint to prevent tampering.</li>
+      <li>PromptPenny clients pin the self-signed certificate fingerprint.</li>
+      <li>Pairing URLs do not embed API keys.</li>
+      <li>The app uses system fonts only — no runtime font downloads.</li>
     </ul>
     <p>No method of transmission or storage is perfectly secure, but PromptPenny minimizes risk by keeping data local and avoiding any central collection.</p>
 

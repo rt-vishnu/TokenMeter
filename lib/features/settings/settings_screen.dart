@@ -44,13 +44,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
-  /// Persists a parsed pairing (host + key + cert pin), reflecting the cleaned
-  /// values back into the fields. [typedKey] takes precedence over a key
-  /// embedded in the pairing URL (so a manually entered key isn't overwritten).
+  /// Persists a parsed pairing (host + cert pin). [typedKey] is required —
+  /// API keys are never embedded in pairing URLs.
   Future<void> _applyPairing(PairingInfo pairing, String typedKey) async {
     final settings = ref.read(settingsServiceProvider);
     final messenger = ScaffoldMessenger.of(context);
-    final key = typedKey.isNotEmpty ? typedKey : (pairing.apiKey ?? '');
+    final key = typedKey.trim();
+    if (key.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('API key is required')),
+      );
+      return;
+    }
 
     await settings.setRemoteHostUrl(pairing.host);
     await settings.setRemoteApiKey(key);
@@ -71,11 +76,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // Accepts either a bare host URL or the full pairing URL from the QR
-  // (e.g. https://192.168.1.42:8765?key=…&fp=…) and splits out key + pin.
-  Future<void> _saveRemoteConnection() => _applyPairing(
-        PairingInfo.parse(_remoteHostController.text),
-        _remoteApiKeyController.text.trim(),
+  Future<void> _applyPairingFromRaw(String raw, String typedKey) async {
+    try {
+      await _applyPairing(PairingInfo.parse(raw), typedKey);
+    } on PairingValidationException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  // Accepts either a bare host URL or the pairing URL from the QR
+  // (e.g. https://192.168.1.42:8765?fp=…).
+  Future<void> _saveRemoteConnection() => _applyPairingFromRaw(
+        _remoteHostController.text,
+        _remoteApiKeyController.text,
       );
 
   Future<void> _scanToPair() async {
@@ -83,7 +99,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       MaterialPageRoute(builder: (_) => const QrScanScreen()),
     );
     if (result == null || !mounted) return;
-    await _applyPairing(PairingInfo.parse(result), '');
+    await _applyPairingFromRaw(result, _remoteApiKeyController.text);
   }
 
   /// mobile_scanner has a camera implementation on web, mobile, and macOS —
@@ -125,10 +141,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Copy the endpoint URL and API key from Integration on your '
-                'phone (with API server enabled). Both are required. Tip: paste '
-                'the full pairing URL from the QR into the host field and the '
-                'key and certificate pin fill in automatically.',
+                'Scan the pairing QR or paste the host URL from Integration on your '
+                'phone (with API server enabled). Enter the API key separately — '
+                'it is not included in the QR for security.',
               ),
             ),
           ),
@@ -137,7 +152,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             controller: _remoteHostController,
             decoration: const InputDecoration(
               labelText: 'Remote API host URL',
-              hintText: 'http://192.168.1.42:8765',
+              hintText: 'https://192.168.1.42:8765',
             ),
           ),
           const SizedBox(height: 8),
@@ -182,6 +197,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               value: settings.useHttps,
               onChanged: (v) async {
+                if (!v) {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Disable HTTPS?'),
+                      content: const Text(
+                        'Traffic to the local API server will be sent in '
+                        'cleartext on your network. Anyone on the same Wi‑Fi '
+                        'could read usage data and your API key. '
+                        'Only disable on trusted networks.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Disable HTTPS'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
                 await ref.read(serverStateProvider.notifier).setHttps(v);
                 if (mounted) setState(() {});
               },

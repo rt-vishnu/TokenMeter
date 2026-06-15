@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/providers/app_providers.dart';
@@ -34,10 +33,8 @@ class PromptPennyApp extends ConsumerWidget {
       brightness: brightness,
     );
 
-    // Nunito: rounded, warm letterforms (the Duolingo feel). Bold headings.
-    final baseText = GoogleFonts.nunitoTextTheme(
-      ThemeData(brightness: brightness).textTheme,
-    );
+    // System font stack — no runtime fetch to third-party font servers.
+    final baseText = ThemeData(brightness: brightness).textTheme;
     final textTheme = baseText.copyWith(
       headlineMedium:
           baseText.headlineMedium?.copyWith(fontWeight: FontWeight.w800),

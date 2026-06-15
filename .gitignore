@@ -48,3 +48,7 @@ app.*.map.json
 .env
 **/.env
 !**/.env.example
+
+# Node dependencies (VS Code extension, etc.)
+node_modules/
+**/node_modules/

@@ -8,7 +8,7 @@ param(
     [string]$SessionId = ""
 )
 
-if (-not $Url) { $Url = "http://127.0.0.1:8765" }
+if (-not $Url) { $Url = "https://127.0.0.1:8765" }
 if (-not $ApiKey) {
     Write-Error "Set PROMPT_PENNY_API_KEY environment variable or pass -ApiKey"
     exit 1

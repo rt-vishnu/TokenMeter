@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/services/pinned_http_client.dart';
+import '../../core/utils/pairing.dart';
 
 class IntegrationScreen extends ConsumerStatefulWidget {
   const IntegrationScreen({super.key});
@@ -25,10 +26,10 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
     final settings = ref.watch(settingsServiceProvider);
     final apiKey = settings.apiKey;
     final endpoint = serverState.endpoint;
-    // Full pairing string shared via QR or the "Copy pairing link" button.
-    final pairingLink = serverState.fingerprint != null
-        ? '$endpoint?key=$apiKey&fp=${serverState.fingerprint}'
-        : '$endpoint?key=$apiKey';
+    // Pairing link/QR: endpoint + cert fingerprint only (API key copied separately).
+    final pairingLink = endpoint != null
+        ? PairingInfo.buildLink(endpoint, fingerprint: serverState.fingerprint)
+        : null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -39,8 +40,9 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             child: const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Web mode: in Settings, enter the host URL and API key from '
-                'Integration on your phone or desktop (API server enabled).',
+                'Web mode: in Settings, scan the pairing QR or enter the host URL '
+                'and API key from Integration on your phone or desktop (API server enabled). '
+                'The API key is not included in the QR for security.',
               ),
             ),
           ),
@@ -88,9 +90,8 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
                     serverState.fingerprint == null
                         ? 'Traffic is encrypted over HTTPS.'
                         : 'Traffic is encrypted over HTTPS. Clients verify the '
-                            'certificate fingerprint below — scan the QR to pair '
-                            'automatically. Third-party tools must skip cert '
-                            'verification (e.g. curl -k).',
+                            'certificate fingerprint below — scan the QR to pair. '
+                            'Enter the API key separately in Settings.',
                   ),
                 ),
               ),
@@ -145,15 +146,20 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             pinnedFingerprint: serverState.fingerprint,
           ),
           const SizedBox(height: 12),
-          // One-tap pairing: copies the full URL (endpoint + key + cert pin).
-          // Paste it into the web client's host field — it parses everything.
+          // Pairing URL (endpoint + cert pin). API key is copied from the field above.
           FilledButton.tonalIcon(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: pairingLink));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Pairing link copied')),
-              );
-            },
+            onPressed: pairingLink == null
+                ? null
+                : () {
+                    Clipboard.setData(ClipboardData(text: pairingLink));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Pairing link copied — paste in web Settings and enter API key separately',
+                        ),
+                      ),
+                    );
+                  },
             icon: const Icon(Icons.link),
             label: const Text('Copy pairing link'),
           ),
@@ -168,7 +174,7 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
               ),
               padding: const EdgeInsets.all(16),
               child: QrImageView(
-                data: pairingLink,
+                data: pairingLink!,
                 version: QrVersions.auto,
                 size: 180,
                 backgroundColor: Colors.white,

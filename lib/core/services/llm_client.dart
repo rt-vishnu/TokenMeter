@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 /// Supported chat providers. The Chat tab talks to each provider's REST API
@@ -59,6 +60,9 @@ extension LlmProviderInfo on LlmProvider {
       };
 
   String get id => name;
+
+  /// Anthropic blocks direct browser API access; use the native app instead.
+  bool get isSupportedOnWeb => this != LlmProvider.anthropic;
 }
 
 /// One turn in a conversation, provider-neutral.
@@ -99,6 +103,12 @@ abstract class LlmClient {
   });
 
   factory LlmClient.forProvider(LlmProvider provider, {String apiKey = ''}) {
+    if (kIsWeb && !provider.isSupportedOnWeb) {
+      throw const LlmException(
+        'Anthropic is not available in the web app. '
+        'Use the mobile or desktop app, or choose another provider.',
+      );
+    }
     switch (provider) {
       case LlmProvider.gemini:
         return _GeminiClient(apiKey);
@@ -441,13 +451,18 @@ class _AnthropicClient implements LlmClient {
 
   static final _uri = Uri.parse('https://api.anthropic.com/v1/messages');
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        // Allows direct calls from the Flutter web build (CORS).
-        'anthropic-dangerous-direct-browser-access': 'true',
-      };
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+    // Native/desktop only — never expose keys via browser CORS on web.
+    if (!kIsWeb) {
+      headers['anthropic-dangerous-direct-browser-access'] = 'true';
+    }
+    return headers;
+  }
 
   Map<String, Object> _payload(String model, List<ChatTurn> history) => {
         'model': model,
