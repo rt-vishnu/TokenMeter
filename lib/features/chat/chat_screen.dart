@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -890,10 +891,21 @@ class _MarkdownReply extends StatelessWidget {
       data: text,
       selectable: true,
       onTapLink: (text, href, title) {
-        if (href != null) {
-          launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+        if (href == null) return;
+        // Model output is untrusted: only follow safe web/mail links. Never
+        // launch javascript:, file:, intent:, or other schemes from a reply.
+        const allowed = {'http', 'https', 'mailto'};
+        final uri = Uri.tryParse(href);
+        if (uri != null && allowed.contains(uri.scheme)) {
+          launchUrl(uri, mode: LaunchMode.externalApplication);
         }
       },
+      // Don't fetch remote images from model output — that would leak the
+      // device's IP to an attacker-chosen URL. Show the alt text instead.
+      imageBuilder: (uri, title, alt) => Text(
+        (alt != null && alt.isNotEmpty) ? '[image: $alt]' : '[image]',
+        style: base.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
       styleSheet: MarkdownStyleSheet(
         p: base,
         // Headings shrink to bubble-friendly sizes (no giant h1/h2).
@@ -1057,8 +1069,14 @@ class _ProviderSetupViewState extends ConsumerState<_ProviderSetupView> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Your key is stored securely on this device only and is '
-                  'sent only to ${p.displayName}.',
+                  kIsWeb
+                      ? 'Your key is sent only to ${p.displayName}. Note: on the '
+                          'web app it is kept in browser storage, which is less '
+                          'protected than the installed app — for sensitive '
+                          'keys, prefer the mobile or desktop app.'
+                      : 'Your key is stored securely on this device only (OS '
+                          'keychain/keystore) and is sent only to '
+                          '${p.displayName}.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

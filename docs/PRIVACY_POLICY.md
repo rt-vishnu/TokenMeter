@@ -43,6 +43,9 @@ This data is stored in:
 - The operating system's **secure storage** for secrets — Keychain (iOS/macOS),
   Keystore (Android), or DPAPI-protected storage (Windows). API keys and the
   TLS private key are kept here.
+- **On the web app**, secrets are kept in the browser's local storage, which is
+  **less protected** than the OS secure storage used by the installed apps. For
+  sensitive keys, prefer the mobile or desktop app.
 
 PromptPenny does not transmit this data to us or to any third party except as
 described below.

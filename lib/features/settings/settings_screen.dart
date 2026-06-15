@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/models/model_pricing.dart';
 import '../../core/providers/app_providers.dart';
-import '../../core/providers/app_providers_common.dart';
 import '../../core/services/pricing_repository.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/utils/pairing.dart';
@@ -414,10 +413,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (confirmed != true) return;
+    if (!context.mounted) return;
     final db = ref.read(appDatabaseProvider);
     final messenger = ScaffoldMessenger.of(context);
     await db?.clearAllChatHistory();
-    if (!mounted) return;
     messenger.showSnackBar(
       const SnackBar(content: Text('Chat history cleared')),
     );
