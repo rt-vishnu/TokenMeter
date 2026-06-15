@@ -283,6 +283,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const SizedBox(height: 16),
         _BudgetControlsCard(settings: settings),
         const SizedBox(height: 16),
+        Text('Privacy', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('Clear chat history'),
+            subtitle: const Text('Deletes all saved conversations from this device'),
+            trailing: TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () => _clearChatHistory(context),
+              child: const Text('Clear'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         Text('About', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Card(
@@ -369,6 +386,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(pricingRepositoryProvider).saveCustomModel(model);
       if (mounted) setState(() {});
     }
+  }
+
+  Future<void> _clearChatHistory(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear chat history?'),
+        content: const Text(
+          'All saved conversations will be permanently deleted from this device. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final db = ref.read(appDatabaseProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    await db?.clearAllChatHistory();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Chat history cleared')),
+    );
   }
 
   Future<void> _showImportDialog(BuildContext context) async {
