@@ -9,6 +9,7 @@ import '../../core/models/model_pricing.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/services/pricing_repository.dart';
 import '../../core/services/settings_service.dart';
+import '../../core/theme/app_warning_theme.dart';
 import '../../core/utils/pairing.dart';
 import '../integration/qr_scan_screen.dart';
 
@@ -135,58 +136,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        if (kIsWeb) ...[
-          Card(
-            color: Theme.of(context).colorScheme.tertiaryContainer,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Scan the pairing QR or paste the host URL from Integration on your '
-                'phone (with API server enabled). Enter the API key separately — '
-                'it is not included in the QR for security.',
+        Text('Remote server', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Card(
+          color: AppWarningTheme.of(context).container,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Scan the QR code on the server device\'s Connect screen, '
+              'or paste the host URL manually. '
+              'Enter the API key separately — it is not included in the QR.',
+              style: TextStyle(color: AppWarningTheme.of(context).onContainer),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _remoteHostController,
+          decoration: const InputDecoration(
+            labelText: 'Remote API host URL',
+            hintText: 'https://192.168.1.42:8765',
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _remoteApiKeyController,
+          decoration: const InputDecoration(
+            labelText: 'Remote API key',
+            hintText: 'Paste key from the server device\'s Connect screen',
+          ),
+          obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton(
+                onPressed: _saveRemoteConnection,
+                child: const Text('Save connection'),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _remoteHostController,
-            decoration: const InputDecoration(
-              labelText: 'Remote API host URL',
-              hintText: 'https://192.168.1.42:8765',
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _remoteApiKeyController,
-            decoration: const InputDecoration(
-              labelText: 'Remote API key',
-              hintText: 'Paste key from phone Integration screen',
-            ),
-            obscureText: true,
-            autocorrect: false,
-            enableSuggestions: false,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  onPressed: _saveRemoteConnection,
-                  child: const Text('Save remote connection'),
-                ),
+            if (_scannerSupported) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _scanToPair,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan QR'),
               ),
-              if (_scannerSupported) ...[
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _scanToPair,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Scan QR'),
-                ),
-              ],
             ],
-          ),
-          const SizedBox(height: 16),
-        ],
+          ],
+        ),
+        const SizedBox(height: 16),
         if (!kIsWeb) ...[
           Card(
             child: SwitchListTile(

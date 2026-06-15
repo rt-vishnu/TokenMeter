@@ -71,6 +71,7 @@ class LocalApiServer {
     }
 
     final router = Router()
+      ..get('/', _root)
       ..get('/api/v1/health', _health)
       ..get('/api/v1/info', _info)
       ..get('/api/v1/models', _models)
@@ -131,6 +132,44 @@ class LocalApiServer {
     _server = null;
     _boundAddress = null;
     _requestedPort = null;
+  }
+
+  Response _root(Request request) {
+    final port = _server?.port ?? '';
+    final scheme = _scheme;
+    final html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${AppConstants.appName} – API Server</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 24px; color: #1c1c1e; background: #f2f2f7; }
+    .card { background: white; border-radius: 18px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .badge { display: inline-block; background: #d1fae5; color: #065f46; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; margin-bottom: 20px; }
+    p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; color: #3c3c43; }
+    code { background: #f2f2f7; border-radius: 6px; padding: 2px 6px; font-size: 13px; }
+    .step { display: flex; gap: 12px; margin-bottom: 10px; align-items: flex-start; }
+    .num { background: #10b981; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; margin-top: 1px; }
+    .note { font-size: 13px; color: #8e8e93; margin-top: 20px; border-top: 1px solid #f2f2f7; padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${AppConstants.appName}</h1>
+    <div class="badge">API Server Running</div>
+    <p>This device is sharing token-usage data over your local network on <code>$scheme://&lt;device-ip&gt;:$port</code>.</p>
+    <p>This is not a website — it is a local REST API meant to be used with the <strong>${AppConstants.appName} app</strong>, not a browser.</p>
+    <p style="margin-top:20px; font-weight:700;">How to connect from another device:</p>
+    <div class="step"><div class="num">1</div><p style="margin:0">Install <strong>${AppConstants.appName}</strong> on the other device.</p></div>
+    <div class="step"><div class="num">2</div><p style="margin:0">Open the <strong>Connect</strong> screen and tap <strong>Scan QR to connect</strong>.</p></div>
+    <div class="step"><div class="num">3</div><p style="margin:0">Point it at the QR on this device — then enter the API key shown on this device's Connect screen.</p></div>
+    <p class="note">API key is required via <code>Authorization: Bearer &lt;key&gt;</code> on all endpoints except <code>/api/v1/health</code>. The QR does <em>not</em> contain the key.</p>
+  </div>
+</body>
+</html>''';
+    return Response.ok(html, headers: {'Content-Type': 'text/html; charset=utf-8'});
   }
 
   Response _health(Request request) {
@@ -322,8 +361,8 @@ class LocalApiServer {
     return diff == 0;
   }
 
-  // Only health checks are public; all other routes require the API key.
-  static const _publicPaths = {'api/v1/health'};
+  // Root and health are public; all other routes require the API key.
+  static const _publicPaths = {'', 'api/v1/health'};
 
   Middleware get _authMiddleware => (Handler innerHandler) {
         return (Request request) async {
@@ -403,10 +442,10 @@ class LocalApiServer {
   }
 
   static const _jsonHeaders = {'Content-Type': 'application/json'};
+  // Content-Type is NOT included here — each handler sets its own.
   // Origin header is set dynamically in _corsMiddleware for localhost only.
   static const _baseCorsHeaders = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Content-Type': 'application/json',
   };
 }
