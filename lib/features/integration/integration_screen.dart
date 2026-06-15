@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/services/pinned_http_client.dart';
+import '../../core/theme/app_warning_theme.dart';
 import '../../core/utils/pairing.dart';
 
 class IntegrationScreen extends ConsumerStatefulWidget {
@@ -36,7 +37,7 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
       children: [
         if (kIsWeb)
           Card(
-            color: Theme.of(context).colorScheme.tertiaryContainer,
+            color: AppWarningTheme.of(context).container,
             child: const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
@@ -82,9 +83,10 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Card(
-                color: Colors.green.shade800.withValues(alpha: 0.2),
+                color: Theme.of(context).colorScheme.primaryContainer,
                 child: ListTile(
-                  leading: const Icon(Icons.lock, color: Colors.green),
+                  leading: Icon(Icons.lock,
+                      color: Theme.of(context).colorScheme.primary),
                   title: const Text('Encrypted (self-signed)'),
                   subtitle: Text(
                     serverState.fingerprint == null
@@ -100,10 +102,10 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Card(
-                color: Colors.amber.shade800.withValues(alpha: 0.2),
+                color: AppWarningTheme.of(context).container,
                 child: ListTile(
-                  leading: const Icon(Icons.warning_amber_rounded,
-                      color: Colors.amber),
+                  leading: Icon(Icons.warning_amber_rounded,
+                      color: AppWarningTheme.of(context).color),
                   title: const Text('Unencrypted connection'),
                   subtitle: const Text(
                     'API server is running over HTTP. Enable HTTPS in Settings, '
@@ -424,10 +426,10 @@ class _TestConnectionTileState extends State<_TestConnectionTile> {
       if (!mounted) return;
       if (response.statusCode == 200) {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Connected — API key accepted ✓'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: const Text('Connected — API key accepted ✓'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            duration: const Duration(seconds: 2),
           ),
         );
       } else if (response.statusCode == 403) {

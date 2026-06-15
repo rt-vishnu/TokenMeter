@@ -511,6 +511,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         if (!needsKey)
           SafeArea(
+            bottom: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Row(
@@ -837,32 +838,34 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                 ] else
                   const Spacer(),
-                GestureDetector(
-                  onTap: _copy,
-                  child: Tooltip(
-                    message: 'Copy',
-                    child: Icon(
-                      _copied ? Icons.check_rounded : Icons.copy_outlined,
-                      size: 14,
-                      color: _copied
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
+                IconButton(
+                  onPressed: _copy,
+                  tooltip: 'Copy',
+                  iconSize: 14,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    _copied ? Icons.check_rounded : Icons.copy_outlined,
+                    color: _copied
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
                 ),
                 if (widget.onFlag != null) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: widget.onFlag,
-                    child: Tooltip(
-                      message: widget.isFlagged ? 'Reported' : 'Report response',
-                      child: Icon(
-                        widget.isFlagged ? Icons.flag : Icons.flag_outlined,
-                        size: 14,
-                        color: widget.isFlagged
-                            ? scheme.error
-                            : scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                      ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: widget.onFlag,
+                    tooltip: widget.isFlagged ? 'Reported' : 'Report response',
+                    iconSize: 14,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      widget.isFlagged ? Icons.flag : Icons.flag_outlined,
+                      color: widget.isFlagged
+                          ? scheme.error
+                          : scheme.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
                   ),
                 ],

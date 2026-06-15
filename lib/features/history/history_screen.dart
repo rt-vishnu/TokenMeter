@@ -11,6 +11,7 @@ import '../../core/models/usage_payload.dart';
 import '../../core/models/usage_record.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/widgets/app_empty_state.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -23,6 +24,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   String _sourceFilter = '';
   String _modelFilter = '';
   List<UsageRecord> _filtered = [];
+  final _sourceCtrl = TextEditingController();
+  final _modelCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _sourceCtrl.dispose();
+    _modelCtrl.dispose();
+    super.dispose();
+  }
 
   String _buildCsv(List<UsageRecord> records) {
     final buf = StringBuffer();
@@ -103,6 +113,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: selectedModel,
                 decoration: const InputDecoration(labelText: 'Model'),
                 items: [
@@ -211,6 +222,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             children: [
               Expanded(
                 child: TextField(
+                  controller: _sourceCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Filter by source',
                     hintText: 'cursor, vscode...',
@@ -222,6 +234,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: TextField(
+                  controller: _modelCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Filter by model',
                     hintText: 'gpt-4o...',
@@ -249,7 +262,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         Expanded(
           child: recordsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => const AppErrorState(),
             data: (records) {
               final filtered = records.where((r) {
                 if (_sourceFilter.isNotEmpty &&
@@ -269,7 +282,26 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               });
 
               if (filtered.isEmpty) {
-                return const Center(child: Text('No usage records found.'));
+                final hasFilters =
+                    _sourceFilter.isNotEmpty || _modelFilter.isNotEmpty;
+                return AppEmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: hasFilters
+                      ? 'No records match your filters'
+                      : 'No usage records yet',
+                  subtitle: hasFilters
+                      ? null
+                      : 'Records appear here once you start using the chat or connect an integration.',
+                  actionLabel: hasFilters ? 'Clear filters' : null,
+                  onAction: hasFilters
+                      ? () => setState(() {
+                            _sourceFilter = '';
+                            _modelFilter = '';
+                            _sourceCtrl.clear();
+                            _modelCtrl.clear();
+                          })
+                      : null,
+                );
               }
 
               final totalCost =
