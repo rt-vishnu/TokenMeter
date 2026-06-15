@@ -454,9 +454,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
-    final db = ref.read(appDatabaseProvider);
     final messenger = ScaffoldMessenger.of(context);
-    await db?.clearAllChatHistory();
+    await ref.read(chatHistoryRepositoryProvider).clearAll();
     messenger.showSnackBar(
       const SnackBar(content: Text('Chat history cleared')),
     );
