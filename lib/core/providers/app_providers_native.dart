@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database/app_database_io.dart';
+import '../../data/repositories/chat_history_repository.dart';
+import '../../data/repositories/chat_history_repository_io.dart';
 import '../../data/repositories/usage_repository_base.dart';
 import '../../data/repositories/usage_repository_io.dart';
 import '../services/local_api_server_io.dart';
@@ -22,6 +24,11 @@ final usageRepositoryProvider = Provider<UsageRepositoryBase?>((ref) {
       ref.read(usageRefreshTickProvider.notifier).bump();
     },
   );
+});
+
+final chatHistoryRepositoryProvider = Provider<ChatHistoryRepository>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return ChatHistoryRepositoryIo(db!);
 });
 
 final localApiServerProvider = Provider<LocalApiServer?>((ref) {

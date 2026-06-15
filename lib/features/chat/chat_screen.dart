@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +13,7 @@ import '../../core/services/llm_client.dart';
 import '../../core/services/pricing_repository.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/utils/formatters.dart';
-import '../../data/database/app_database_io.dart';
+import '../../data/repositories/chat_history_repository.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -76,13 +75,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _loadLastSession() async {
-    final db = ref.read(appDatabaseProvider);
-    if (db == null) return;
+    final repo = ref.read(chatHistoryRepositoryProvider);
     setState(() => _loadingHistory = true);
     try {
-      final sessionId = await db.getLatestSessionId();
+      final sessionId = await repo.getLatestSessionId();
       if (sessionId == null || !mounted) return;
-      final rows = await db.getSessionMessages(sessionId);
+      final rows = await repo.getSessionMessages(sessionId);
       if (!mounted) return;
       setState(() {
         _sessionId = sessionId;
@@ -95,7 +93,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  _ChatMessage _messageFromDb(ChatMessage row) => _ChatMessage(
+  _ChatMessage _messageFromDb(ChatHistoryMessage row) => _ChatMessage(
         isUser: row.role == 'user',
         text: row.content,
         inputTokens: row.inputTokens,
@@ -106,20 +104,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       );
 
   Future<void> _persistMessage(String role, _ChatMessage msg) async {
-    final db = ref.read(appDatabaseProvider);
-    if (db == null || _sessionId == null) return;
-    await db.insertChatMessage(ChatMessagesCompanion(
-      id: Value(_uuid.v4()),
-      sessionId: Value(_sessionId!),
-      role: Value(role),
-      content: Value(msg.text),
-      inputTokens: Value(msg.inputTokens),
-      outputTokens: Value(msg.outputTokens),
-      costUsd: Value(msg.cost),
-      model: Value(msg.model),
-      interrupted: Value(msg.interrupted),
-      createdAt: Value(DateTime.now()),
-    ));
+    if (_sessionId == null) return;
+    await ref.read(chatHistoryRepositoryProvider).saveMessage(
+          ChatHistoryMessage(
+            id: _uuid.v4(),
+            sessionId: _sessionId!,
+            role: role,
+            content: msg.text,
+            inputTokens: msg.inputTokens,
+            outputTokens: msg.outputTokens,
+            costUsd: msg.cost,
+            model: msg.model,
+            interrupted: msg.interrupted,
+            createdAt: DateTime.now(),
+          ),
+        );
   }
 
   void _startNewChat() {
