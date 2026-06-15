@@ -311,6 +311,17 @@ class LocalApiServer {
     }
   }
 
+  /// Length-independent-result comparison to avoid leaking the API key via
+  /// response timing. (The length itself isn't secret.)
+  static bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+
   // Public paths that do not require an API key.
   static const _publicPaths = {'api/v1/health', 'api/v1/info', 'api/v1/models'};
 
@@ -327,7 +338,7 @@ class LocalApiServer {
             );
           }
           final token = header.substring(7);
-          if (token != _settings.apiKey) {
+          if (!_constantTimeEquals(token, _settings.apiKey)) {
             return Response.forbidden(
               jsonEncode({'error': 'Invalid API key'}),
               headers: _jsonHeaders,
@@ -340,9 +351,12 @@ class LocalApiServer {
   Middleware get _corsMiddleware => (Handler innerHandler) {
         return (Request request) async {
           final origin = request.headers['origin'] ?? '';
-          // Only allow browser requests originating from localhost/127.0.0.1.
-          final isLocalOrigin = origin.contains('localhost') ||
-              origin.contains('127.0.0.1');
+          // Only reflect a real localhost origin — exact host match, not a
+          // substring (which "http://evil.com/#localhost" would satisfy).
+          final originUri = Uri.tryParse(origin);
+          final isLocalOrigin = originUri != null &&
+              (originUri.scheme == 'http' || originUri.scheme == 'https') &&
+              (originUri.host == 'localhost' || originUri.host == '127.0.0.1');
           final corsHeaders = isLocalOrigin
               ? {..._baseCorsHeaders, 'Access-Control-Allow-Origin': origin}
               : _baseCorsHeaders;
