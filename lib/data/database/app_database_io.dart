@@ -22,12 +22,42 @@ class UsageRecords extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [UsageRecords])
+class ChatMessages extends Table {
+  TextColumn get id => text()();
+  TextColumn get sessionId => text()();
+  // 'user' | 'assistant' | 'error'
+  TextColumn get role => text()();
+  TextColumn get content => text()();
+  IntColumn get inputTokens => integer().nullable()();
+  IntColumn get outputTokens => integer().nullable()();
+  RealColumn get costUsd => real().nullable()();
+  TextColumn get model => text().nullable()();
+  BoolColumn get interrupted =>
+      boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [UsageRecords, ChatMessages])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(chatMessages);
+          }
+        },
+      );
+
+  // ── UsageRecords ─────────────────────────────────────────────────────────
 
   Future<void> insertRecord(UsageRecordsCompanion record) =>
       into(usageRecords).insert(record);
@@ -90,7 +120,8 @@ class AppDatabase extends _$AppDatabase {
     return result;
   }
 
-  Future<int> countRecords() => (select(usageRecords)).get().then((r) => r.length);
+  Future<int> countRecords() =>
+      (select(usageRecords)).get().then((r) => r.length);
 
   Future<List<UsageRecord>> getRecordsPaged({
     DateTime? from,
@@ -103,8 +134,12 @@ class AppDatabase extends _$AppDatabase {
     final query = select(usageRecords);
     if (from != null) query.where((t) => t.createdAt.isBiggerOrEqualValue(from));
     if (to != null) query.where((t) => t.createdAt.isSmallerOrEqualValue(to));
-    if (source != null && source.isNotEmpty) query.where((t) => t.source.equals(source));
-    if (model != null && model.isNotEmpty) query.where((t) => t.model.equals(model));
+    if (source != null && source.isNotEmpty) {
+      query.where((t) => t.source.equals(source));
+    }
+    if (model != null && model.isNotEmpty) {
+      query.where((t) => t.model.equals(model));
+    }
     query.orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
     query.limit(limit, offset: offset);
     return query.get();
@@ -116,6 +151,49 @@ class AppDatabase extends _$AppDatabase {
         .go();
     return count > 0;
   }
+
+  // ── ChatMessages ──────────────────────────────────────────────────────────
+
+  Future<void> insertChatMessage(ChatMessagesCompanion msg) =>
+      into(chatMessages).insert(msg);
+
+  /// All messages for a session, oldest first.
+  Future<List<ChatMessage>> getSessionMessages(String sessionId) =>
+      (select(chatMessages)
+            ..where((t) => t.sessionId.equals(sessionId))
+            ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+          .get();
+
+  /// Returns distinct (sessionId, firstCreatedAt) pairs, newest session first.
+  /// Used to build the sessions list.
+  Future<List<({String sessionId, DateTime startedAt})>>
+      getChatSessions() async {
+    final rows = await (select(chatMessages)
+          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+        .get();
+    // Collect the earliest message time per session while preserving order.
+    final seen = <String, DateTime>{};
+    for (final r in rows) {
+      seen.putIfAbsent(r.sessionId, () => r.createdAt);
+    }
+    // Sort sessions newest-first by their first message.
+    final sessions = seen.entries
+        .map((e) => (sessionId: e.key, startedAt: e.value))
+        .toList()
+      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    return sessions;
+  }
+
+  /// Most-recently-started session ID, or null if no chat history.
+  Future<String?> getLatestSessionId() async {
+    final sessions = await getChatSessions();
+    return sessions.isEmpty ? null : sessions.first.sessionId;
+  }
+
+  Future<void> deleteSession(String sessionId) =>
+      (delete(chatMessages)..where((t) => t.sessionId.equals(sessionId))).go();
+
+  Future<void> clearAllChatHistory() => delete(chatMessages).go();
 }
 
 LazyDatabase _openConnection() {

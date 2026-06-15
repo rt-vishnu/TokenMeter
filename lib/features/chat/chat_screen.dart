@@ -1,8 +1,10 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/models/usage_payload.dart';
 import '../../core/providers/app_providers.dart';
@@ -11,6 +13,7 @@ import '../../core/services/llm_client.dart';
 import '../../core/services/pricing_repository.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/utils/formatters.dart';
+import '../../data/database/app_database_io.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -50,15 +53,83 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final List<_ChatMessage> _messages = [];
   final _flaggedIndices = <int>{};
   bool _sending = false;
+  bool _loadingHistory = false;
   double _sessionCost = 0;
   // Partial assistant reply while a streamed response is in flight.
   String _streamingText = '';
+  String? _sessionId;
+
+  static const _uuid = Uuid();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastSession();
+  }
 
   @override
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadLastSession() async {
+    final db = ref.read(appDatabaseProvider);
+    if (db == null) return;
+    setState(() => _loadingHistory = true);
+    try {
+      final sessionId = await db.getLatestSessionId();
+      if (sessionId == null || !mounted) return;
+      final rows = await db.getSessionMessages(sessionId);
+      if (!mounted) return;
+      setState(() {
+        _sessionId = sessionId;
+        _messages.addAll(rows.map(_messageFromDb));
+        _sessionCost = rows.fold(0.0, (sum, r) => sum + (r.costUsd ?? 0));
+      });
+      _jumpToBottom();
+    } finally {
+      if (mounted) setState(() => _loadingHistory = false);
+    }
+  }
+
+  _ChatMessage _messageFromDb(ChatMessage row) => _ChatMessage(
+        isUser: row.role == 'user',
+        text: row.content,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cost: row.costUsd,
+        model: row.model,
+        interrupted: row.interrupted,
+      );
+
+  Future<void> _persistMessage(String role, _ChatMessage msg) async {
+    final db = ref.read(appDatabaseProvider);
+    if (db == null || _sessionId == null) return;
+    await db.insertChatMessage(ChatMessagesCompanion(
+      id: Value(_uuid.v4()),
+      sessionId: Value(_sessionId!),
+      role: Value(role),
+      content: Value(msg.text),
+      inputTokens: Value(msg.inputTokens),
+      outputTokens: Value(msg.outputTokens),
+      costUsd: Value(msg.cost),
+      model: Value(msg.model),
+      interrupted: Value(msg.interrupted),
+      createdAt: Value(DateTime.now()),
+    ));
+  }
+
+  void _startNewChat() {
+    setState(() {
+      _messages.clear();
+      _flaggedIndices.clear();
+      _sessionId = null;
+      _sessionCost = 0;
+      _streamingText = '';
+      _sending = false;
+    });
   }
 
   void _scrollToBottom() {
@@ -131,12 +202,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return;
     }
 
+    _sessionId ??= _uuid.v4();
+    final userMsg = _ChatMessage(isUser: true, text: text);
     setState(() {
-      _messages.add(_ChatMessage(isUser: true, text: text));
+      _messages.add(userMsg);
       _sending = true;
     });
     _inputController.clear();
     _scrollToBottom();
+    await _persistMessage('user', userMsg);
 
     await _runCompletion(provider, model, pricing);
   }
@@ -209,19 +283,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           );
 
       if (!mounted) return;
+      final assistantMsg = _ChatMessage(
+        isUser: false,
+        text: reply.text,
+        inputTokens: reply.inputTokens,
+        outputTokens: reply.outputTokens,
+        cost: cost,
+        model: model,
+      );
       setState(() {
-        _messages.add(_ChatMessage(
-          isUser: false,
-          text: reply.text,
-          inputTokens: reply.inputTokens,
-          outputTokens: reply.outputTokens,
-          cost: cost,
-          model: model,
-        ));
+        _messages.add(assistantMsg);
         _sessionCost += cost;
         _streamingText = '';
         _sending = false;
       });
+      await _persistMessage('assistant', assistantMsg);
     } on LlmException catch (e) {
       _handleFailure(e.message);
     } catch (e) {
@@ -370,8 +446,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _ProviderBar(
           provider: provider,
           sessionCost: _sessionCost,
+          hasMessages: _messages.isNotEmpty,
           onProviderChanged: _changeProvider,
           onConfigure: () => _showConfigDialog(context, provider),
+          onNewChat: _startNewChat,
         ),
         if (!needsKey)
           _ModelSelector(
@@ -391,7 +469,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   provider: provider,
                   onSaved: () => setState(() {}),
                 )
-              : _messages.isEmpty
+              : _loadingHistory
+                  ? const Center(child: CircularProgressIndicator())
+                  : _messages.isEmpty
                   ? const _ChatEmptyHint()
                   : ListView.builder(
                       controller: _scrollController,
@@ -530,14 +610,18 @@ class _ProviderBar extends StatelessWidget {
   const _ProviderBar({
     required this.provider,
     required this.sessionCost,
+    required this.hasMessages,
     required this.onProviderChanged,
     required this.onConfigure,
+    required this.onNewChat,
   });
 
   final LlmProvider provider;
   final double sessionCost;
+  final bool hasMessages;
   final ValueChanged<LlmProvider> onProviderChanged;
   final VoidCallback onConfigure;
+  final VoidCallback onNewChat;
 
   @override
   Widget build(BuildContext context) {
@@ -575,6 +659,12 @@ class _ProviderBar extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
+          if (hasMessages)
+            IconButton(
+              icon: const Icon(Icons.add_comment_outlined),
+              tooltip: 'New chat',
+              onPressed: onNewChat,
+            ),
           IconButton(
             icon: const Icon(Icons.key),
             tooltip: 'Change API key',
