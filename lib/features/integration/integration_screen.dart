@@ -10,6 +10,7 @@ import '../../core/providers/app_providers.dart';
 import '../../core/services/pinned_http_client.dart';
 import '../../core/theme/app_warning_theme.dart';
 import '../../core/utils/pairing.dart';
+import 'qr_scan_screen.dart';
 
 class IntegrationScreen extends ConsumerStatefulWidget {
   const IntegrationScreen({super.key});
@@ -21,13 +22,112 @@ class IntegrationScreen extends ConsumerStatefulWidget {
 class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
   bool _keyVisible = false;
 
+  /// Scans another device's server QR and saves the remote connection.
+  /// The API key is not in the QR — user is prompted to enter it after scan.
+  Future<void> _scanToConnect() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+
+    final raw = await nav.push<String>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (raw == null || !mounted) return;
+
+    final PairingInfo pairing;
+    try {
+      pairing = PairingInfo.parse(raw);
+    } on PairingValidationException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+
+    // Prompt for the API key shown on the server device's Connect screen.
+    final keyController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter API key'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Server found at ${pairing.host}',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Enter the API key shown on the server device\'s Connect screen.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: keyController,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'API key',
+                hintText: 'Paste from the other device',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final key = keyController.text.trim();
+    if (key.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('API key is required')),
+      );
+      return;
+    }
+
+    final settings = ref.read(settingsServiceProvider);
+    await settings.setRemoteHostUrl(pairing.host);
+    await settings.setRemoteApiKey(key);
+    await settings.setRemotePinnedFingerprint(pairing.fingerprint);
+    ref.read(remoteSettingsRevisionProvider.notifier).state++;
+    ref.read(usageRefreshTickProvider.notifier).bump();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(pairing.fingerprint != null
+            ? 'Connected to ${pairing.host} (certificate pinned)'
+            : 'Connected to ${pairing.host}'),
+      ),
+    );
+  }
+
+  bool get _scannerSupported {
+    if (kIsWeb) return true;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final serverState = ref.watch(serverStateProvider);
     final settings = ref.watch(settingsServiceProvider);
     final apiKey = settings.apiKey;
     final endpoint = serverState.endpoint;
-    // Pairing link/QR: endpoint + cert fingerprint only (API key copied separately).
+    // Pairing QR: endpoint + cert fingerprint only. API key is never embedded.
     final pairingLink = endpoint != null
         ? PairingInfo.buildLink(endpoint, fingerprint: serverState.fingerprint)
         : null;
@@ -198,6 +298,25 @@ class _IntegrationScreenState extends ConsumerState<IntegrationScreen> {
             endpoint: settings.remoteHostUrl!,
             apiKey: settings.remoteApiKey ?? '',
             pinnedFingerprint: settings.remotePinnedFingerprint,
+          ),
+        ],
+        if (_scannerSupported) ...[
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          Text('Connect to another device',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Scan the QR code on a device running the PromptPenny API server '
+            'to sync its usage data to this device.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _scanToConnect,
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('Scan QR to connect'),
           ),
         ],
         const SizedBox(height: 16),

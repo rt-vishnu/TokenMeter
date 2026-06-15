@@ -17,6 +17,7 @@ class PairingInfo {
   final String? fingerprint;
 
   /// Builds a pairing URL/QR payload (endpoint + optional cert fingerprint).
+  /// API keys are intentionally excluded — they must be entered separately.
   static String buildLink(String endpoint, {String? fingerprint}) {
     final base = Uri.parse(endpoint.trim());
     return base
@@ -41,8 +42,8 @@ class PairingInfo {
 
     if (uri.queryParameters.containsKey('key')) {
       throw PairingValidationException(
-        'This pairing link includes an API key in the URL (old format). '
-        'Copy the endpoint from Integration and enter the API key separately.',
+        'This pairing link contains an API key — do not share it digitally. '
+        'Enter the API key manually from the Connect screen.',
       );
     }
 
