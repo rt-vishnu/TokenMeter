@@ -37,8 +37,7 @@ class SettingsService {
   static const _chatModelKey = 'chat_model';
 
   // Billing/admin keys for actual-spend reconciliation, keyed by provider id.
-  // Extend this list as providers are added (Phase 0b: openai, anthropic).
-  static const _billingProviderIds = ['openrouter', 'openai', 'anthropic'];
+  static const _billingProviderIds = ['openrouter', 'openai', 'anthropic', 'awsBedrock'];
 
   // Cached in memory after first load to avoid async on every read.
   String? _cachedApiKey;
