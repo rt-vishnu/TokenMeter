@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 /// Providers that expose a billing/usage API we can read actual spend from.
@@ -8,7 +9,8 @@ enum BillingProvider {
   openrouter,
   openai,
   anthropic,
-  gemini;
+  gemini,
+  awsBedrock;
 
   String get id => name;
 
@@ -17,6 +19,7 @@ enum BillingProvider {
         BillingProvider.openai => 'OpenAI',
         BillingProvider.anthropic => 'Anthropic',
         BillingProvider.gemini => 'Google Gemini',
+        BillingProvider.awsBedrock => 'AWS Bedrock',
       };
 
   /// The `provider` value in the pricing data, for the Tracked-vs-Actual strip.
@@ -25,6 +28,7 @@ enum BillingProvider {
         BillingProvider.openai => 'openai',
         BillingProvider.anthropic => 'anthropic',
         BillingProvider.gemini => 'google',
+        BillingProvider.awsBedrock => 'aws-bedrock',
       };
 
   /// Where the user creates the key needed for billing reads.
@@ -35,6 +39,8 @@ enum BillingProvider {
         BillingProvider.anthropic =>
           'https://console.anthropic.com/settings/keys',
         BillingProvider.gemini => 'https://console.cloud.google.com/billing',
+        BillingProvider.awsBedrock =>
+          'https://console.aws.amazon.com/cost-management/home#/cost-explorer',
       };
 
   /// Short note about the kind of key required.
@@ -49,7 +55,15 @@ enum BillingProvider {
           'Requires an organization Admin key (sk-ant-admin…, created by an '
               'org admin). Reads cost only — separate from your chat key.',
         BillingProvider.gemini => '',
+        BillingProvider.awsBedrock =>
+          'First enable Cost Explorer in your AWS Billing console (one-time). '
+              'Then create an IAM user, attach the AWSBillingReadOnlyAccess '
+              'managed policy, and generate an Access Key.',
       };
+
+  /// True when this provider uses AWS-style dual credentials (key ID + secret)
+  /// rather than a single API key string.
+  bool get requiresAwsCredentials => this == BillingProvider.awsBedrock;
 }
 
 enum BillingStatus { connected, notConnected, unsupported, error }
@@ -149,6 +163,8 @@ abstract class BillingClient {
         return _AnthropicBillingClient(apiKey);
       case BillingProvider.gemini:
         return _UnsupportedBillingClient(BillingProvider.gemini);
+      case BillingProvider.awsBedrock:
+        return _AwsBedrockBillingClient(apiKey);
     }
   }
 }
@@ -358,6 +374,195 @@ class _AnthropicBillingClient implements BillingClient {
     } catch (_) {
       return ProviderActuals.error(
           BillingProvider.anthropic, 'Unexpected response from Anthropic.');
+    }
+  }
+}
+
+// ── AWS SigV4 (minimal, Cost Explorer only) ───────────────────────────────────
+
+class _AwsSigV4 {
+  static const _region = 'us-east-1';
+  static const _service = 'ce';
+  static const _host = 'ce.us-east-1.amazonaws.com';
+
+  static List<int> _hmac(List<int> key, List<int> data) =>
+      Hmac(sha256, key).convert(data).bytes;
+
+  static String _hexEncode(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  static String _sha256Hex(String s) =>
+      _hexEncode(sha256.convert(utf8.encode(s)).bytes);
+
+  static String _pad2(int n) => n.toString().padLeft(2, '0');
+
+  static String _dateStamp(DateTime utc) =>
+      '${utc.year.toString().padLeft(4, '0')}${_pad2(utc.month)}${_pad2(utc.day)}';
+
+  static String _amzDate(DateTime utc) =>
+      '${_dateStamp(utc)}T${_pad2(utc.hour)}${_pad2(utc.minute)}${_pad2(utc.second)}Z';
+
+  /// Returns signed headers for a POST to the Cost Explorer endpoint.
+  static Map<String, String> signCeRequest({
+    required String accessKeyId,
+    required String secretKey,
+    required String body,
+    DateTime? now,
+  }) {
+    final utc = (now ?? DateTime.now()).toUtc();
+    final dateStamp = _dateStamp(utc);
+    final amzDate = _amzDate(utc);
+    const contentType = 'application/x-amz-json-1.1';
+    const target = 'AWSInsightsIndexService.GetCostAndUsage';
+
+    final payloadHash = _sha256Hex(body);
+
+    // Canonical headers must be sorted alphabetically by header name (lowercase).
+    final canonicalHeaders =
+        'content-type:$contentType\n'
+        'host:$_host\n'
+        'x-amz-date:$amzDate\n'
+        'x-amz-target:$target\n';
+    const signedHeaders = 'content-type;host;x-amz-date;x-amz-target';
+
+    final canonicalRequest = [
+      'POST', '/', '',
+      canonicalHeaders, signedHeaders, payloadHash,
+    ].join('\n');
+
+    final credScope = '$dateStamp/$_region/$_service/aws4_request';
+    final stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      credScope,
+      _sha256Hex(canonicalRequest),
+    ].join('\n');
+
+    final kDate = _hmac(utf8.encode('AWS4$secretKey'), utf8.encode(dateStamp));
+    final kRegion = _hmac(kDate, utf8.encode(_region));
+    final kService = _hmac(kRegion, utf8.encode(_service));
+    final kSigning = _hmac(kService, utf8.encode('aws4_request'));
+    final signature = _hexEncode(_hmac(kSigning, utf8.encode(stringToSign)));
+
+    return {
+      'Content-Type': contentType,
+      'X-Amz-Date': amzDate,
+      'X-Amz-Target': target,
+      'Authorization':
+          'AWS4-HMAC-SHA256 '
+          'Credential=$accessKeyId/$credScope, '
+          'SignedHeaders=$signedHeaders, '
+          'Signature=$signature',
+    };
+  }
+}
+
+// ── AWS Bedrock (Cost Explorer) ───────────────────────────────────────────────
+
+/// Credentials are stored as JSON: {"accessKeyId":"AKIA…","secretAccessKey":"…"}
+class _AwsBedrockBillingClient implements BillingClient {
+  _AwsBedrockBillingClient(this._credJson);
+  final String _credJson;
+
+  static final _uri = Uri.https(_AwsSigV4._host, '/');
+
+  @override
+  Future<ProviderActuals> fetch() async {
+    final Map<String, dynamic> creds;
+    try {
+      creds = jsonDecode(_credJson) as Map<String, dynamic>;
+    } catch (_) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock, 'Invalid credentials — reconnect AWS Bedrock.');
+    }
+
+    final accessKeyId = (creds['accessKeyId'] as String? ?? '').trim();
+    final secretKey = (creds['secretAccessKey'] as String? ?? '').trim();
+    if (accessKeyId.isEmpty || secretKey.isEmpty) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock,
+          'Missing Access Key ID or Secret Access Key — reconnect.');
+    }
+
+    // Request the current calendar month. End is the first of next month
+    // (exclusive), so we always capture the full partial month.
+    final now = DateTime.now().toUtc();
+    final nextMonth = DateTime.utc(now.year, now.month + 1, 1);
+    String fmtDate(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}'
+        '-${d.month.toString().padLeft(2, '0')}'
+        '-${d.day.toString().padLeft(2, '0')}';
+
+    final body = jsonEncode({
+      'TimePeriod': {
+        'Start': fmtDate(DateTime.utc(now.year, now.month, 1)),
+        'End': fmtDate(nextMonth),
+      },
+      'Granularity': 'MONTHLY',
+      'Filter': {
+        'Dimensions': {
+          'Key': 'SERVICE',
+          'Values': ['Amazon Bedrock'],
+        },
+      },
+      'Metrics': ['UnblendedCost'],
+    });
+
+    final headers = _AwsSigV4.signCeRequest(
+      accessKeyId: accessKeyId,
+      secretKey: secretKey,
+      body: body,
+    );
+
+    final http.Response res;
+    try {
+      res = await http
+          .post(_uri, headers: headers, body: body)
+          .timeout(const Duration(seconds: 25));
+    } catch (_) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock, 'Network error — could not reach AWS.');
+    }
+
+    if (res.statusCode == 400 || res.statusCode == 401) {
+      String? msg;
+      try {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        msg = j['message'] as String? ?? j['Message'] as String?;
+      } catch (_) {}
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock,
+          msg != null ? 'AWS: $msg' : 'Invalid credentials (${res.statusCode}).');
+    }
+    if (res.statusCode == 403) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock,
+          'Access denied. Ensure the IAM user has the ce:GetCostAndUsage permission.');
+    }
+    if (res.statusCode != 200) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock, 'AWS error ${res.statusCode}.');
+    }
+
+    try {
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final results = j['ResultsByTime'] as List<dynamic>? ?? [];
+      var total = 0.0;
+      for (final r in results) {
+        final totalMap = (r as Map<String, dynamic>)['Total'] as Map?;
+        final cost = totalMap?['UnblendedCost'] as Map?;
+        total += double.tryParse(cost?['Amount'] as String? ?? '') ?? 0;
+      }
+      return ProviderActuals(
+        provider: BillingProvider.awsBedrock,
+        status: BillingStatus.connected,
+        monthCost: total,
+        lastSynced: DateTime.now(),
+      );
+    } catch (_) {
+      return ProviderActuals.error(
+          BillingProvider.awsBedrock,
+          'Unexpected response from AWS Cost Explorer.');
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -176,6 +178,11 @@ class _ProviderCard extends ConsumerWidget {
   }
 
   Future<void> _showConnectDialog(BuildContext context, WidgetRef ref) async {
+    if (provider.requiresAwsCredentials) {
+      await _showAwsConnectDialog(context, ref);
+      return;
+    }
+
     final controller = TextEditingController();
     final action = await showDialog<String>(
       context: context,
@@ -224,6 +231,77 @@ class _ProviderCard extends ConsumerWidget {
       final settings = ref.read(settingsServiceProvider);
       await settings.setBillingApiKey(provider.id, action);
       // Clear stale cache so the new key triggers a fresh fetch.
+      await settings.setBillingActualsCacheRaw(provider.id, null);
+      ref.invalidate(providerActualsProvider(provider));
+    }
+  }
+
+  Future<void> _showAwsConnectDialog(BuildContext context, WidgetRef ref) async {
+    final keyIdCtrl = TextEditingController();
+    final secretCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Connect AWS Bedrock'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(provider.keyHint,
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 12),
+              TextField(
+                controller: keyIdCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Access Key ID',
+                  hintText: 'AKIA…',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: secretCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Secret Access Key',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => launchUrl(
+                    Uri.parse(provider.keySetupUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Open AWS Billing console'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final id = keyIdCtrl.text.trim();
+      final secret = secretCtrl.text.trim();
+      if (id.isEmpty || secret.isEmpty) return;
+      final credJson = jsonEncode({'accessKeyId': id, 'secretAccessKey': secret});
+      final settings = ref.read(settingsServiceProvider);
+      await settings.setBillingApiKey(provider.id, credJson);
       await settings.setBillingActualsCacheRaw(provider.id, null);
       ref.invalidate(providerActualsProvider(provider));
     }
