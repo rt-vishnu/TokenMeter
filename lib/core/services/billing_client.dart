@@ -299,7 +299,11 @@ class _OpenAiBillingClient implements BillingClient {
         final results = (b as Map<String, dynamic>)['results'] as List? ?? [];
         for (final r in results) {
           final amount = (r as Map<String, dynamic>)['amount'] as Map?;
-          total += (amount?['value'] as num?)?.toDouble() ?? 0;
+          // OpenAI may return value as a num or a decimal string.
+          final value = amount?['value'];
+          total += value is num
+              ? value.toDouble()
+              : (double.tryParse('$value') ?? 0);
         }
       }
       return ProviderActuals(
@@ -308,9 +312,9 @@ class _OpenAiBillingClient implements BillingClient {
         monthCost: total,
         lastSynced: DateTime.now(),
       );
-    } catch (_) {
+    } catch (e) {
       return ProviderActuals.error(
-          BillingProvider.openai, 'Unexpected response from OpenAI.');
+          BillingProvider.openai, 'Unexpected response from OpenAI: $e');
     }
   }
 }
