@@ -488,21 +488,22 @@ class _AwsBedrockBillingClient implements BillingClient {
           'Missing Access Key ID or Secret Access Key — reconnect.');
     }
 
-    // Request the current calendar month. End is the first of next month
-    // (exclusive), so we always capture the full partial month.
+    // Month-to-date via DAILY buckets (more reliable than MONTHLY for the
+    // in-progress calendar month). End is exclusive — first day of next month.
     final now = DateTime.now().toUtc();
+    final monthStart = DateTime.utc(now.year, now.month, 1);
     final nextMonth = DateTime.utc(now.year, now.month + 1, 1);
     String fmtDate(DateTime d) =>
         '${d.year.toString().padLeft(4, '0')}'
         '-${d.month.toString().padLeft(2, '0')}'
         '-${d.day.toString().padLeft(2, '0')}';
 
-    final body = jsonEncode({
+    final requestBody = <String, dynamic>{
       'TimePeriod': {
-        'Start': fmtDate(DateTime.utc(now.year, now.month, 1)),
+        'Start': fmtDate(monthStart),
         'End': fmtDate(nextMonth),
       },
-      'Granularity': 'MONTHLY',
+      'Granularity': 'DAILY',
       'Filter': {
         'Dimensions': {
           'Key': 'SERVICE',
@@ -510,63 +511,94 @@ class _AwsBedrockBillingClient implements BillingClient {
         },
       },
       'Metrics': ['UnblendedCost'],
-    });
-
-    final headers = _AwsSigV4.signCeRequest(
-      accessKeyId: accessKeyId,
-      secretKey: secretKey,
-      body: body,
-    );
-
-    final http.Response res;
-    try {
-      res = await http
-          .post(_uri, headers: headers, body: body)
-          .timeout(const Duration(seconds: 25));
-    } catch (_) {
-      return ProviderActuals.error(
-          BillingProvider.awsBedrock, 'Network error — could not reach AWS.');
-    }
-
-    if (res.statusCode == 400 || res.statusCode == 401) {
-      String? msg;
-      try {
-        final j = jsonDecode(res.body) as Map<String, dynamic>;
-        msg = j['message'] as String? ?? j['Message'] as String?;
-      } catch (_) {}
-      return ProviderActuals.error(
-          BillingProvider.awsBedrock,
-          msg != null ? 'AWS: $msg' : 'Invalid credentials (${res.statusCode}).');
-    }
-    if (res.statusCode == 403) {
-      return ProviderActuals.error(
-          BillingProvider.awsBedrock,
-          'Access denied. Ensure the IAM user has the ce:GetCostAndUsage permission.');
-    }
-    if (res.statusCode != 200) {
-      return ProviderActuals.error(
-          BillingProvider.awsBedrock, 'AWS error ${res.statusCode}.');
-    }
+    };
 
     try {
-      final j = jsonDecode(res.body) as Map<String, dynamic>;
-      final results = j['ResultsByTime'] as List<dynamic>? ?? [];
-      var total = 0.0;
-      for (final r in results) {
-        final totalMap = (r as Map<String, dynamic>)['Total'] as Map?;
-        final cost = totalMap?['UnblendedCost'] as Map?;
-        total += double.tryParse(cost?['Amount'] as String? ?? '') ?? 0;
-      }
+      final total = await _fetchUnblendedTotal(
+        accessKeyId: accessKeyId,
+        secretKey: secretKey,
+        requestBody: requestBody,
+      );
       return ProviderActuals(
         provider: BillingProvider.awsBedrock,
         status: BillingStatus.connected,
         monthCost: total,
         lastSynced: DateTime.now(),
       );
+    } on _AwsCeException catch (e) {
+      return ProviderActuals.error(BillingProvider.awsBedrock, e.message);
     } catch (_) {
       return ProviderActuals.error(
           BillingProvider.awsBedrock,
           'Unexpected response from AWS Cost Explorer.');
     }
   }
+
+  /// Paginates GetCostAndUsage and sums UnblendedCost across all time buckets.
+  Future<double> _fetchUnblendedTotal({
+    required String accessKeyId,
+    required String secretKey,
+    required Map<String, dynamic> requestBody,
+  }) async {
+    var total = 0.0;
+    String? pageToken;
+
+    do {
+      final bodyMap = Map<String, dynamic>.from(requestBody);
+      if (pageToken != null) {
+        bodyMap['NextPageToken'] = pageToken;
+      }
+      final body = jsonEncode(bodyMap);
+
+      final headers = _AwsSigV4.signCeRequest(
+        accessKeyId: accessKeyId,
+        secretKey: secretKey,
+        body: body,
+      );
+
+      final http.Response res;
+      try {
+        res = await http
+            .post(_uri, headers: headers, body: body)
+            .timeout(const Duration(seconds: 25));
+      } catch (_) {
+        throw const _AwsCeException('Network error — could not reach AWS.');
+      }
+
+      if (res.statusCode == 400 || res.statusCode == 401) {
+        String? msg;
+        try {
+          final j = jsonDecode(res.body) as Map<String, dynamic>;
+          msg = j['message'] as String? ?? j['Message'] as String?;
+        } catch (_) {}
+        throw _AwsCeException(
+          msg != null ? 'AWS: $msg' : 'Invalid credentials (${res.statusCode}).',
+        );
+      }
+      if (res.statusCode == 403) {
+        throw const _AwsCeException(
+          'Access denied. Ensure the IAM user has the ce:GetCostAndUsage permission.',
+        );
+      }
+      if (res.statusCode != 200) {
+        throw _AwsCeException('AWS error ${res.statusCode}.');
+      }
+
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final results = j['ResultsByTime'] as List<dynamic>? ?? [];
+      for (final r in results) {
+        final totalMap = (r as Map<String, dynamic>)['Total'] as Map?;
+        final cost = totalMap?['UnblendedCost'] as Map?;
+        total += double.tryParse(cost?['Amount'] as String? ?? '') ?? 0;
+      }
+      pageToken = j['NextPageToken'] as String?;
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    return total;
+  }
+}
+
+class _AwsCeException implements Exception {
+  const _AwsCeException(this.message);
+  final String message;
 }
