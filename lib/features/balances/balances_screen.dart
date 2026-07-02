@@ -346,6 +346,16 @@ class _ConnectedView extends StatelessWidget {
                     )),
           ],
         ),
+        if (!hasBalance && actuals.provider == BillingProvider.awsBedrock) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Amazon Bedrock · Unblended · calendar month (UTC). '
+            'Cost Explorer can lag up to 24h.',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
         const SizedBox(height: 8),
         if (hasBalance) ...[
           Row(
